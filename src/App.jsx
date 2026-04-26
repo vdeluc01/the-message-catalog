@@ -46,6 +46,8 @@ export default function App() {
   const [filterStage, setFilterStage] = useState('all');
   const [expandedMaster, setExpandedMaster] = useState(null);
   const [expandedVersion, setExpandedVersion] = useState(null);
+  const [expandedGroups, setExpandedGroups] = useState(new Set());
+  const changeView = (v) => { setView(v); setExpandedGroups(new Set()); };
   const [saveStatus, setSaveStatus] = useState('');
   const [showSettings, setShowSettings] = useState(false);
 
@@ -986,7 +988,7 @@ export default function App() {
             </select>
             <div style={{ display:'flex', gap:4, marginLeft:'auto', flexWrap:'wrap' }}>
               {['Dashboard',...VIEWS].map(v=>(
-                <button key={v} onClick={()=>setView(v)}
+                <button key={v} onClick={()=>changeView(v)}
                   style={{ background:view===v?'#161616':'transparent', border:`1px solid ${view===v?'#C8942A':'#333'}`, borderRadius:4,
                            color:view===v?'#C8942A':'#aaa', padding:'6px 11px', fontSize:10, cursor:'pointer', letterSpacing:'0.08em', textTransform:'uppercase' }}>{v}</button>
               ))}
@@ -1105,35 +1107,43 @@ export default function App() {
                 .filter(s=>filtered.some(m=>m.versions.some(v=>v.takes.some(t=>effectiveStage(t,m.lyrics)===s.id))))
                 .map(s=>({ label:`${s.icon} ${s.label}`, color:s.color, items:sorted.filter(m=>m.versions.some(v=>v.takes.some(t=>effectiveStage(t,m.lyrics)===s.id))) }));
             }
-            return groups.map(group=>(
-              <div key={group.label} style={{ marginBottom:28 }}>
-                <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
-                  <div style={{ width:3, height:14, background:group.color, borderRadius:2 }}/>
-                  <div style={{ fontSize:11, letterSpacing:'0.2em', textTransform:'uppercase', color:group.color }}>{group.label}</div>
-                  <div style={{ fontSize:11, color:'#999' }}>({group.items.length})</div>
+            return groups.map(group => {
+              const isOpen = expandedGroups.has(group.label);
+              const toggle = () => setExpandedGroups(prev => {
+                const next = new Set(prev);
+                if (next.has(group.label)) next.delete(group.label); else next.add(group.label);
+                return next;
+              });
+              return (
+                <div key={group.label} style={{ marginBottom:6 }}>
+                  <div onClick={toggle} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 14px', background:'#0f0f0f', border:`1px solid ${group.color}33`, borderLeft:`3px solid ${group.color}`, borderRadius:4, cursor:'pointer', marginBottom: isOpen ? 8 : 0, userSelect:'none' }}>
+                    <div style={{ fontSize:11, letterSpacing:'0.2em', textTransform:'uppercase', color:group.color, flex:1 }}>{group.label}</div>
+                    <div style={{ fontSize:11, color:'#666' }}>{group.items.length} song{group.items.length!==1?'s':''}</div>
+                    <div style={{ fontSize:11, color:'#555', marginLeft:10 }}>{isOpen ? '▲' : '▼'}</div>
+                  </div>
+                  {isOpen && group.items.map(master => (
+                    <MasterRow key={master.id} master={master} personas={personas} apiKey={apiKey}
+                      expanded={expandedMaster===master.id}
+                      onToggle={()=>setExpandedMaster(expandedMaster===master.id?null:master.id)}
+                      expandedVersion={expandedVersion} setExpandedVersion={setExpandedVersion}
+                      addingVersionTo={addingVersionTo} setAddingVersionTo={setAddingVersionTo}
+                      addVersionForm={addVersionForm} setAddVersionForm={setAddVersionForm}
+                      addVersionAnalyzing={addVersionAnalyzing} addVersionConfirming={addVersionConfirming}
+                      addVersionAnalysis={addVersionAnalysis}
+                      onAddVersionAnalyze={handleAddVersionAnalyze}
+                      onAddVersionConfirm={handleAddVersionConfirm}
+                      setAddVersionConfirming={setAddVersionConfirming}
+                      addingTakeTo={addingTakeTo} setAddingTakeTo={setAddingTakeTo}
+                      takeForm={takeForm} setTakeForm={setTakeForm}
+                      onAddTake={handleAddTake} onUpdateTake={updateTake} onSetPrimary={setPrimaryTake}
+                      onUpdateMaster={updateMaster} onUpdateVersion={updateVersion}
+                      onDeleteMaster={deleteMaster} onDeleteVersion={deleteVersion} onDeleteTake={deleteTake}
+                      savePersonas={savePersonas} flash={flash}
+                    />
+                  ))}
                 </div>
-                {group.items.map(master=>(
-                  <MasterRow key={master.id} master={master} personas={personas} apiKey={apiKey}
-                    expanded={expandedMaster===master.id}
-                    onToggle={()=>setExpandedMaster(expandedMaster===master.id?null:master.id)}
-                    expandedVersion={expandedVersion} setExpandedVersion={setExpandedVersion}
-                    addingVersionTo={addingVersionTo} setAddingVersionTo={setAddingVersionTo}
-                    addVersionForm={addVersionForm} setAddVersionForm={setAddVersionForm}
-                    addVersionAnalyzing={addVersionAnalyzing} addVersionConfirming={addVersionConfirming}
-                    addVersionAnalysis={addVersionAnalysis}
-                    onAddVersionAnalyze={handleAddVersionAnalyze}
-                    onAddVersionConfirm={handleAddVersionConfirm}
-                    setAddVersionConfirming={setAddVersionConfirming}
-                    addingTakeTo={addingTakeTo} setAddingTakeTo={setAddingTakeTo}
-                    takeForm={takeForm} setTakeForm={setTakeForm}
-                    onAddTake={handleAddTake} onUpdateTake={updateTake} onSetPrimary={setPrimaryTake}
-                    onUpdateMaster={updateMaster} onUpdateVersion={updateVersion}
-                    onDeleteMaster={deleteMaster} onDeleteVersion={deleteVersion} onDeleteTake={deleteTake}
-                    savePersonas={savePersonas} flash={flash}
-                  />
-                ))}
-              </div>
-            ));
+              );
+            });
           })()}
         </div>
       )}
