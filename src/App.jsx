@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { uid, getP, iBase, lBase, effectiveStage } from './utils.js';
 import {
   PERSONAS_KEY, APIKEY_KEY, DATA_KEY, FID_KEY,
-  DEFAULT_PERSONAS, STAGES, RELEASE_STATUSES, VIEWS, PERSONA_COLORS
+  DEFAULT_PERSONAS, STAGES, RELEASE_STATUSES, VIEWS, PERSONA_COLORS, THEMES
 } from './constants.js';
 import { getToken, startOAuth, driveLoad, driveSave } from './drive.js';
 import { analyzeWithAI, enrichWithAI, analyzeThemesWithAI } from './ai.js';
@@ -338,7 +338,7 @@ export default function App() {
             instrumentalMood: v.instrumentalMood || r.instrumentalMood || v.instrumentalMood,
             targetAudience: v.targetAudience   || r.targetAudience   || v.targetAudience,
             duration:       v.duration         || r.duration         || v.duration,
-            themes:         (v.themes&&v.themes.length) ? v.themes : (r.themes||v.themes),
+            themes:         (v.themes&&v.themes.length) ? v.themes : ((r.themes||[]).filter(t=>THEMES.includes(t))||v.themes),
             versionSummary: v.versionSummary   || r.versionSummary   || v.versionSummary,
             albumNote:      v.albumNote        || r.albumNote        || v.albumNote,
           };
@@ -376,8 +376,9 @@ export default function App() {
         setNormalizeProgress(p=>({ ...p, current }));
         try {
           const stylePrompt = v.takes?.[0]?.stylePrompt || '';
-          const themes = await analyzeThemesWithAI(m.title, stylePrompt, m.lyrics||'', apiKey);
-          newVersions.push({ ...v, themes });
+          const raw = await analyzeThemesWithAI(m.title, stylePrompt, m.lyrics||'', apiKey);
+          const themes = (Array.isArray(raw) ? raw : []).filter(t => THEMES.includes(t));
+          newVersions.push({ ...v, themes: themes.length ? themes : v.themes });
         } catch(e) {
           newVersions.push(v);
         }
@@ -1161,7 +1162,7 @@ export default function App() {
                 .filter(a=>filtered.some(m=>m.versions.some(v=>(v.targetAudience||'General')===a)))
                 .map(a=>({ label:a, color:'#ccc', items:sorted.filter(m=>m.versions.some(v=>(v.targetAudience||'General')===a)) }));
             } else if (view==='By Theme') {
-              const allThemes = [...new Set(filtered.flatMap(m=>m.versions.flatMap(v=>v.themes||[])))].filter(Boolean).sort();
+              const allThemes = [...new Set(filtered.flatMap(m=>m.versions.flatMap(v=>v.themes||[])))].filter(t=>THEMES.includes(t)).sort((a,b)=>THEMES.indexOf(a)-THEMES.indexOf(b));
               const noTheme = sorted.filter(m=>m.versions.every(v=>!v.themes||v.themes.length===0));
               groups = [
                 ...allThemes.map(theme=>({ label:theme, color:'#C8942A', items:sorted.filter(m=>m.versions.some(v=>(v.themes||[]).includes(theme))) })),
