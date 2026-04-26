@@ -48,4 +48,11 @@ export const RELEASE_STATUSES = [
   { id:'released', label:'Released on Spotify', color:'#34D399' },
 ];
 
+
+export const THEMES = [
+  'Faith','Hope','Redemption','Love','Worship','Justice','Identity',
+  'Journey','Loss','Celebration','Doubt','Community','Spiritual Warfare',
+  'Grace','Healing','Purpose','Surrender','Family','Perseverance','Resurrection'
+];
+
 export const VIEWS = ['By Persona','By Status','By Audience','By Theme','By Stage','Alphabetical'];

@@ -5,7 +5,7 @@ import {
   DEFAULT_PERSONAS, STAGES, RELEASE_STATUSES, VIEWS, PERSONA_COLORS
 } from './constants.js';
 import { getToken, startOAuth, driveLoad, driveSave } from './drive.js';
-import { analyzeWithAI, enrichWithAI } from './ai.js';
+import { analyzeWithAI, enrichWithAI, analyzeThemesWithAI } from './ai.js';
 import {
   exportSupervisorCSV, exportSupervisorPDF,
   exportLabelCSV, exportLabelPDF,
@@ -258,6 +258,9 @@ export default function App() {
   const [enriching, setEnriching] = useState(false);
   const [enrichProgress, setEnrichProgress] = useState({ current:0, total:0 });
   const [enrichResults, setEnrichResults] = useState(null);
+  const [normalizing, setNormalizing] = useState(false);
+  const [normalizeProgress, setNormalizeProgress] = useState({ current:0, total:0 });
+  const [normalizeResults, setNormalizeResults] = useState(null);
 
   async function handleBulkReassess() {
     if (!apiKey) { alert('Enter your Anthropic API key in Settings → General first.'); return; }
@@ -352,6 +355,39 @@ export default function App() {
     save(updated);
     setEnriching(false);
     setEnrichResults({ total:toEnrich, fieldsAdded });
+  }
+
+
+  async function handleNormalizeThemes() {
+    if (!apiKey) { alert('Enter your Anthropic API key in Settings → General first.'); return; }
+    const total = masters.reduce((a,m)=>a+(m.versions||[]).length,0);
+    if (!window.confirm(`This will re-analyze themes for all ${total} song versions using a standard theme list, replacing any free-form tags with consistent ones. Continue?`)) return;
+    setNormalizing(true);
+    setNormalizeResults(null);
+    let updated = [...masters];
+    let current = 0;
+    setNormalizeProgress({ current:0, total });
+    for (let mi=0; mi<updated.length; mi++) {
+      const m = updated[mi];
+      const newVersions = [];
+      for (let vi=0; vi<(m.versions||[]).length; vi++) {
+        const v = m.versions[vi];
+        current++;
+        setNormalizeProgress(p=>({ ...p, current }));
+        try {
+          const stylePrompt = v.takes?.[0]?.stylePrompt || '';
+          const themes = await analyzeThemesWithAI(m.title, stylePrompt, m.lyrics||'', apiKey);
+          newVersions.push({ ...v, themes });
+        } catch(e) {
+          newVersions.push(v);
+        }
+        await new Promise(r=>setTimeout(r,150));
+      }
+      updated[mi] = { ...m, versions: newVersions };
+    }
+    save(updated);
+    setNormalizing(false);
+    setNormalizeResults({ total });
   }
 
   function handleExport() {
@@ -590,7 +626,7 @@ export default function App() {
     byStage: STAGES.map(s=>({...s, count: allTakes.filter(t=>(t.stage||'idea')===s.id).length})),
     byStatus: RELEASE_STATUSES.map(r=>({...r, count:allTakes.filter(t=>(t.releaseStatus||'draft')===r.id).length})),
     byPersona: personas.map(p=>({...p, count:allVersions.filter(v=>v.persona===p.id).length})),
-    topThemes: Object.entries(allVersions.reduce((a,v)=>{ (v.themes||[]).forEach(t=>{a[t]=(a[t]||0)+1;}); return a; },{})).sort((a,b)=>b[1]-a[1]).slice(0,6),
+    topThemes: Object.entries(masters.reduce((a,m)=>{ [...new Set((m.versions||[]).flatMap(v=>v.themes||[]))].forEach(t=>{a[t]=(a[t]||0)+1;}); return a; },{})).sort((a,b)=>b[1]-a[1]).slice(0,6),
     topAudiences: Object.entries(allVersions.reduce((a,v)=>{ if(v.targetAudience) a[v.targetAudience]=(a[v.targetAudience]||0)+1; return a; },{})).sort((a,b)=>b[1]-a[1]).slice(0,5),
   };
   const filtered = masters.filter(m => {
@@ -750,6 +786,35 @@ export default function App() {
                         </button>
                       );
                     })()}
+                  </div>
+
+                  <div style={{ borderTop:'1px solid #1a1a1a', paddingTop:16 }}>
+                    <label style={lBase}>Theme Normalization</label>
+                    <div style={{ fontSize:11, color:'#999', marginBottom:10, lineHeight:1.6 }}>
+                      Re-analyzes themes for every song using a standard 20-theme list — replaces any free-form or inconsistent tags with consistent ones. Runs one AI call per version.
+                    </div>
+                    {normalizing ? (
+                      <div style={{ background:'#0f0f0f', border:'1px solid #222', borderRadius:4, padding:'12px 14px' }}>
+                        <div style={{ fontSize:12, color:'#A855F7', marginBottom:6 }}>🏷 Normalizing… {normalizeProgress.current} / {normalizeProgress.total}</div>
+                        <div style={{ background:'#1a1a1a', borderRadius:3, height:4 }}>
+                          <div style={{ background:'#A855F7', borderRadius:3, height:4, width:`${Math.round(normalizeProgress.current/Math.max(normalizeProgress.total,1)*100)}%`, transition:'width 0.3s' }} />
+                        </div>
+                      </div>
+                    ) : normalizeResults ? (
+                      <div style={{ background:'#0f0a1a', border:'1px solid #2a1a4a', borderRadius:4, padding:'14px 16px' }}>
+                        <div style={{ fontSize:12, color:'#A855F7', fontWeight:600, marginBottom:10 }}>✓ Normalization Complete</div>
+                        <div style={{ fontSize:11, color:'#aaa', marginBottom:12 }}>• {normalizeResults.total} versions re-tagged with standard themes</div>
+                        <button onClick={()=>setNormalizeResults(null)}
+                          style={{ width:'100%', background:'transparent', border:'1px solid #222', borderRadius:3, color:'#555', padding:'7px 0', fontSize:10, cursor:'pointer' }}>
+                          Dismiss
+                        </button>
+                      </div>
+                    ) : (
+                      <button onClick={handleNormalizeThemes}
+                        style={{ width:'100%', background:'#141414', border:'1px solid #A855F755', borderRadius:4, color:'#A855F7', padding:'10px 0', fontSize:12, cursor:'pointer' }}>
+                        🏷 Normalize All Themes to Standard List
+                      </button>
+                    )}
                   </div>
                 </>
               )}

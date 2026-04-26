@@ -1,3 +1,18 @@
+export async function analyzeThemesWithAI(title, stylePrompt, lyrics, apiKey) {
+  const lyricsSnip = (lyrics||'').slice(0,1500);
+  const themeList = 'Faith, Hope, Redemption, Love, Worship, Justice, Identity, Journey, Loss, Celebration, Doubt, Community, Spiritual Warfare, Grace, Healing, Purpose, Surrender, Family, Perseverance, Resurrection';
+  const prompt = 'Pick 2-4 themes for this song from the list below. Return ONLY a JSON array, nothing else.\n\nSong Title: ' + title + '\nStyle Prompt: ' + stylePrompt + '\nLyrics: ' + lyricsSnip + '\n\nTheme list (pick ONLY from this list): ' + themeList + '\n\nReturn format: ["Theme1","Theme2"]';
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'Content-Type':'application/json', 'x-api-key':apiKey, 'anthropic-version':'2023-06-01', 'anthropic-dangerous-direct-browser-access':'true' },
+    body: JSON.stringify({ model:'claude-haiku-4-5-20251001', max_tokens:100, messages:[{ role:'user', content:prompt }] })
+  });
+  const d = await res.json();
+  if (d.error) throw new Error(d.error.message || 'API error');
+  const text = d.content?.find(b=>b.type==='text')?.text || '[]';
+  return JSON.parse(text.replace(/```json\n?|```/g,'').trim());
+}
+
 export async function enrichWithAI(title, stylePrompt, lyrics, apiKey) {
   const lyricsSnip = (lyrics||'').slice(0,1500);
   const prompt = [
@@ -15,7 +30,7 @@ export async function enrichWithAI(title, stylePrompt, lyrics, apiKey) {
     '  "instrumentalMood": "one from: Sparse, Orchestral, Driving, Ambient, Acoustic, Electronic, Big Band, Stripped, Choir-led, Rhythm-heavy, Cinematic",',
     '  "targetAudience": "one from: General, Young Adults, Elderly Listeners, Congregation, Seekers, Families, Men, Women, Youth",',
     '  "duration": "one from: Short (under 2 min), Standard (2-4 min), Extended (4+ min)",',
-    '  "themes": ["2-4 thematic tags e.g. Faith, Hope, Redemption, Journey, Love, Justice, Identity, Loss, Celebration, Doubt, Community"],',
+    '  "themes": ["pick 2-4 from ONLY this list: Faith, Hope, Redemption, Love, Worship, Justice, Identity, Journey, Loss, Celebration, Doubt, Community, Spiritual Warfare, Grace, Healing, Purpose, Surrender, Family, Perseverance, Resurrection"],',
     '  "versionSummary": "2-sentence catalog description of this song\'s sound and message",',
     '  "albumNote": "1 sentence on where this fits in a setlist or album"',
     '}'
