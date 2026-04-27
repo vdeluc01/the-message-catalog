@@ -94,7 +94,6 @@ export default function App() {
   const dismissOnboarding = () => {
     localStorage.setItem('tmsg-onboarding-done','1');
     setShowOnboarding(false);
-    if (!getToken()) startOAuth();
   };
   const [driveStatus, setDriveStatus] = useState('');
   const [driveExpired, setDriveExpired] = useState(false);
