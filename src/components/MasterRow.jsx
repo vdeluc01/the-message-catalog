@@ -133,6 +133,19 @@ function VersionBlock({ version, master, p, isVersionExpanded, onToggleVersion, 
               const manuals = [version.releaseChecklist?.listened, version.releaseChecklist?.coverArt, version.releaseChecklist?.audioDownloaded];
               const done = [...autos, ...manuals].filter(Boolean).length;
               const all = done === 6;
+              const dk = version.distrokid || {};
+              const isLive = !!(dk.spotifyUrl?.trim());
+              const isSubmitted = !!(dk.submittedDate?.trim());
+              const releaseDate = dk.releaseDate?.trim();
+              if (isLive) return (
+                <span style={{ fontSize:10, padding:'2px 7px', borderRadius:3, background:'#1a3a1a', border:'1px solid #34D399', color:'#34D399', letterSpacing:'0.05em', whiteSpace:'nowrap' }}>🟢 Live</span>
+              );
+              if (isSubmitted && releaseDate) return (
+                <span style={{ fontSize:10, padding:'2px 7px', borderRadius:3, background:'#1a2a3a', border:'1px solid #5B8DD9', color:'#5B8DD9', letterSpacing:'0.05em', whiteSpace:'nowrap' }}>📅 {releaseDate}</span>
+              );
+              if (isSubmitted) return (
+                <span style={{ fontSize:10, padding:'2px 7px', borderRadius:3, background:'#1a2a3a', border:'1px solid #5B8DD9', color:'#5B8DD9', letterSpacing:'0.05em', whiteSpace:'nowrap' }}>📬 Submitted</span>
+              );
               return (
                 <span style={{ fontSize:10, padding:'2px 7px', borderRadius:3,
                                background: all ? '#34D39922' : '#1a1a1a',
@@ -295,6 +308,78 @@ function VersionBlock({ version, master, p, isVersionExpanded, onToggleVersion, 
                           </div>
                         ))}
                       </div>
+                    </div>
+                  </div>
+                );
+              })()}
+              {/* DistroKid Submission Tracker */}
+              {(() => {
+                const t0 = version.takes?.[0] || {};
+                const autos = [!!(t0.sunoUrl?.trim()), !!(version.genre && version.mood && version.themes?.length > 0), !!(master.lyrics?.trim())];
+                const manuals = [version.releaseChecklist?.listened, version.releaseChecklist?.coverArt, version.releaseChecklist?.audioDownloaded];
+                const checklistDone = [...autos, ...manuals].filter(Boolean).length === 6;
+                const dk = version.distrokid || {};
+                const [dkOpen, setDkOpen] = React.useState(false);
+                const [dkForm, setDkForm] = React.useState({
+                  submittedDate: dk.submittedDate||'',
+                  releaseDate: dk.releaseDate||'',
+                  hyperFollowUrl: dk.hyperFollowUrl||'',
+                  spotifyUrl: dk.spotifyUrl||'',
+                });
+                const isLive = !!(dk.spotifyUrl?.trim());
+                const isSubmitted = !!(dk.submittedDate?.trim());
+                const fi2 = { background:'#0a0a0a', border:'1px solid #1e1e1e', borderRadius:3, color:'#e8dcc8', padding:'6px 9px', fontSize:11, outline:'none', width:'100%' };
+                const saveDk = () => {
+                  onUpdateVersion(master.id, version.id, { distrokid: dkForm });
+                  setDkOpen(false);
+                };
+                return (
+                  <div style={{ marginBottom:14 }}>
+                    <div style={{ fontSize:9, letterSpacing:'0.2em', color:'#555', textTransform:'uppercase', marginBottom:7 }}>DistroKid</div>
+                    <div style={{ background:'#0c0c0c', border:`1px solid ${isLive?'#34D39933':isSubmitted?'#5B8DD933':'#1e1e1e'}`, borderRadius:5, padding:'10px 12px' }}>
+                      {/* Status row */}
+                      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom: dkOpen ? 10 : 0 }}>
+                        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                          {isLive ? (
+                            <span style={{ fontSize:11, color:'#34D399' }}>🟢 Live on Spotify</span>
+                          ) : isSubmitted ? (
+                            <span style={{ fontSize:11, color:'#5B8DD9' }}>📬 Submitted{dk.releaseDate ? ` · Releasing ${dk.releaseDate}` : ''}</span>
+                          ) : checklistDone ? (
+                            <span style={{ fontSize:11, color:'#C8942A' }}>✓ Checklist complete — ready to submit</span>
+                          ) : (
+                            <span style={{ fontSize:11, color:'#444' }}>Complete checklist before submitting</span>
+                          )}
+                        </div>
+                        <button onClick={()=>{ setDkForm({ submittedDate:dk.submittedDate||'', releaseDate:dk.releaseDate||'', hyperFollowUrl:dk.hyperFollowUrl||'', spotifyUrl:dk.spotifyUrl||'' }); setDkOpen(o=>!o); }}
+                          style={{ background:'transparent', border:'1px solid #252525', borderRadius:3, color:'#888', padding:'3px 9px', fontSize:10, cursor:'pointer' }}>
+                          {dkOpen ? 'Cancel' : isSubmitted ? '✎ Edit' : '+ Log Submission'}
+                        </button>
+                      </div>
+                      {/* Quick-view links when not editing */}
+                      {!dkOpen && (dk.hyperFollowUrl||dk.spotifyUrl) && (
+                        <div style={{ display:'flex', gap:10, marginTop:8 }}>
+                          {dk.hyperFollowUrl && <a href={dk.hyperFollowUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize:10, color:'#C8942A' }}>🔗 HyperFollow</a>}
+                          {dk.spotifyUrl && <a href={dk.spotifyUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize:10, color:'#34D399' }}>🎧 Spotify</a>}
+                        </div>
+                      )}
+                      {/* Edit form */}
+                      {dkOpen && (
+                        <div style={{ display:'grid', gap:8 }}>
+                          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+                            <div><label style={{ fontSize:9, letterSpacing:'0.12em', color:'#aaa', textTransform:'uppercase', display:'block', marginBottom:3 }}>Submitted Date</label>
+                              <input value={dkForm.submittedDate} onChange={e=>setDkForm(f=>({...f,submittedDate:e.target.value}))} placeholder="YYYY-MM-DD" style={fi2} /></div>
+                            <div><label style={{ fontSize:9, letterSpacing:'0.12em', color:'#aaa', textTransform:'uppercase', display:'block', marginBottom:3 }}>Release Date</label>
+                              <input value={dkForm.releaseDate} onChange={e=>setDkForm(f=>({...f,releaseDate:e.target.value}))} placeholder="YYYY-MM-DD" style={fi2} /></div>
+                          </div>
+                          <div><label style={{ fontSize:9, letterSpacing:'0.12em', color:'#aaa', textTransform:'uppercase', display:'block', marginBottom:3 }}>HyperFollow URL</label>
+                            <input value={dkForm.hyperFollowUrl} onChange={e=>setDkForm(f=>({...f,hyperFollowUrl:e.target.value}))} placeholder="https://distrokid.com/hyperfollow/…" style={fi2} /></div>
+                          <div><label style={{ fontSize:9, letterSpacing:'0.12em', color:'#aaa', textTransform:'uppercase', display:'block', marginBottom:3 }}>Spotify URL (once live)</label>
+                            <input value={dkForm.spotifyUrl} onChange={e=>setDkForm(f=>({...f,spotifyUrl:e.target.value}))} placeholder="https://open.spotify.com/track/…" style={fi2} /></div>
+                          <button onClick={saveDk} style={{ background:'linear-gradient(135deg,#5B8DD9,#3a6ab0)', border:'none', borderRadius:3, color:'#fff', padding:'7px 0', fontSize:11, letterSpacing:'0.1em', textTransform:'uppercase', cursor:'pointer' }}>
+                            ✓ Save
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
