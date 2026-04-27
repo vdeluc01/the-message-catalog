@@ -114,6 +114,14 @@ function VersionBlock({ version, master, p, isVersionExpanded, onToggleVersion, 
     proStatus: version.proStatus||'',
   });
 
+  const [dkOpen, setDkOpen] = useState(false);
+  const [dkForm, setDkForm] = useState({
+    submittedDate: (version.distrokid||{}).submittedDate||'',
+    releaseDate: (version.distrokid||{}).releaseDate||'',
+    hyperFollowUrl: (version.distrokid||{}).hyperFollowUrl||'',
+    spotifyUrl: (version.distrokid||{}).spotifyUrl||'',
+  });
+
   const sel = { background:'#0d0d0d', border:'1px solid #1e1e1e', borderRadius:4, color:'#aaa', padding:'8px 10px', fontSize:12, outline:'none', width:'100%' };
 
   return (
@@ -319,13 +327,6 @@ function VersionBlock({ version, master, p, isVersionExpanded, onToggleVersion, 
                 const manuals = [version.releaseChecklist?.listened, version.releaseChecklist?.coverArt, version.releaseChecklist?.audioDownloaded];
                 const checklistDone = [...autos, ...manuals].filter(Boolean).length === 6;
                 const dk = version.distrokid || {};
-                const [dkOpen, setDkOpen] = React.useState(false);
-                const [dkForm, setDkForm] = React.useState({
-                  submittedDate: dk.submittedDate||'',
-                  releaseDate: dk.releaseDate||'',
-                  hyperFollowUrl: dk.hyperFollowUrl||'',
-                  spotifyUrl: dk.spotifyUrl||'',
-                });
                 const isLive = !!(dk.spotifyUrl?.trim());
                 const isSubmitted = !!(dk.submittedDate?.trim());
                 const fi2 = { background:'#0a0a0a', border:'1px solid #1e1e1e', borderRadius:3, color:'#e8dcc8', padding:'6px 9px', fontSize:11, outline:'none', width:'100%' };
