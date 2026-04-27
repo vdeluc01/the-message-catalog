@@ -539,7 +539,7 @@ export default function MasterRow({ master, personas, apiKey, expanded, onToggle
   addVersionAnalyzing, addVersionConfirming, addVersionAnalysis,
   onAddVersionAnalyze, onAddVersionConfirm, setAddVersionConfirming,
   addingTakeTo, setAddingTakeTo, takeForm, setTakeForm, onAddTake,
-  onUpdateTake, onSetPrimary, onUpdateMaster, onUpdateVersion, onDeleteMaster, onDeleteVersion, onDeleteTake, savePersonas, flash }) {
+  onUpdateTake, onSetPrimary, onUpdateMaster, onUpdateVersion, onDeleteMaster, onDeleteVersion, onDeleteTake, savePersonas, flash, searchQ }) {
 
   const [editingMaster, setEditingMaster] = useState(false);
   const [editForm, setEditForm] = useState({ title:master.title, lyrics:master.lyrics||'', notes:master.notes||'' });
@@ -579,6 +579,26 @@ export default function MasterRow({ master, personas, apiKey, expanded, onToggle
             <span style={{ fontSize:10, color:'#aaa' }}>{master.versions?.length||0} version{(master.versions?.length||0)!==1?'s':''}</span>
             {master.addedAt && <><span style={{ fontSize:10, color:'#444' }}>·</span><span style={{ fontSize:10, color:'#444' }}>{fmtDate(master.addedAt)}</span></>}
           </div>
+          {searchQ && master.lyrics && master.lyrics.toLowerCase().includes(searchQ.toLowerCase()) &&
+           !master.title.toLowerCase().includes(searchQ.toLowerCase()) && (() => {
+            const q = searchQ.toLowerCase();
+            const lines = master.lyrics.split('\n');
+            const matchLine = lines.find(l => l.toLowerCase().includes(q)) || '';
+            const idx = matchLine.toLowerCase().indexOf(q);
+            const before = matchLine.slice(0, idx);
+            const match = matchLine.slice(idx, idx + searchQ.length);
+            const after = matchLine.slice(idx + searchQ.length);
+            const trimBefore = before.length > 30 ? '…' + before.slice(-30) : before;
+            const trimAfter = after.length > 30 ? after.slice(0, 30) + '…' : after;
+            return (
+              <div style={{ fontSize:10, color:'#666', fontStyle:'italic', marginTop:2, display:'flex', alignItems:'center', gap:4 }}>
+                <span style={{ color:'#444', fontSize:9, letterSpacing:'0.1em', flexShrink:0 }}>LYRICS</span>
+                <span style={{ color:'#555' }}>"…{trimBefore}</span>
+                <span style={{ color:'#C8942A', fontStyle:'normal', fontWeight:600 }}>{match}</span>
+                <span style={{ color:'#555' }}>{trimAfter}…"</span>
+              </div>
+            );
+          })()}
         </div>
         <div style={{ display:'flex', gap:6, alignItems:'center', flexShrink:0 }}>
           {primaryTakes.slice(0,2).map(t=><StagePill key={t.id} take={t} masterLyrics={master.lyrics} />)}

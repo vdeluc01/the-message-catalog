@@ -55,4 +55,4 @@ export const THEMES = [
   'Grace','Healing','Purpose','Surrender','Family','Perseverance','Resurrection'
 ];
 
-export const VIEWS = ['By Persona','By Status','By Audience','By Theme','By Stage','Alphabetical'];
+export const VIEWS = ['By Persona','By Status','By Audience','By Theme','By Stage','Alphabetical','Release Calendar'];

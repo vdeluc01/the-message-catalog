@@ -88,6 +88,10 @@ export default function App() {
 
   const importRef = useRef();
   const driveAutoSaveTimer = useRef(null);
+  const [showOnboarding, setShowOnboarding] = useState(() => {
+    return !localStorage.getItem('tmsg-onboarding-done');
+  });
+  const dismissOnboarding = () => { localStorage.setItem('tmsg-onboarding-done','1'); setShowOnboarding(false); };
   const [driveStatus, setDriveStatus] = useState('');
   const [driveExpired, setDriveExpired] = useState(false);
 
@@ -628,13 +632,23 @@ export default function App() {
     byStage: STAGES.map(s=>({...s, count: allTakes.filter(t=>(t.stage||'idea')===s.id).length})),
     byStatus: RELEASE_STATUSES.map(r=>({...r, count:allTakes.filter(t=>(t.releaseStatus||'draft')===r.id).length})),
     byPersona: personas.map(p=>({...p, count:allVersions.filter(v=>v.persona===p.id).length})),
-    topThemes: Object.entries(masters.reduce((a,m)=>{ [...new Set((m.versions||[]).flatMap(v=>v.themes||[]))].forEach(t=>{a[t]=(a[t]||0)+1;}); return a; },{})).sort((a,b)=>b[1]-a[1]).slice(0,6),
+    topThemes: Object.entries(masters.reduce((a,m)=>{ [...new Set((m.versions||[]).flatMap(v=>v.themes||[]))].forEach(t=>{a[t]=(a[t]||0)+1;}); return a; },{})).sort((a,b)=>b[1]-a[1]).slice(0,10),
     topAudiences: Object.entries(allVersions.reduce((a,v)=>{ if(v.targetAudience) a[v.targetAudience]=(a[v.targetAudience]||0)+1; return a; },{})).sort((a,b)=>b[1]-a[1]).slice(0,5),
+    dkSubmitted: allVersions.filter(v=>v.distrokid?.submittedDate?.trim()).length,
+    dkLive: allVersions.filter(v=>v.distrokid?.spotifyUrl?.trim()).length,
+    checklistReady: allVersions.filter(v=>{
+      const t0=v.takes?.[0]||{};
+      const master=masters.find(m=>m.versions?.some(vv=>vv.id===v.id));
+      const autos=[!!(t0.sunoUrl?.trim()),!!(v.genre&&v.mood&&v.themes?.length>0),!!(master?.lyrics?.trim())];
+      const manuals=[v.releaseChecklist?.listened,v.releaseChecklist?.coverArt,v.releaseChecklist?.audioDownloaded];
+      return [...autos,...manuals].filter(Boolean).length===6;
+    }).length,
   };
   const filtered = masters.filter(m => {
     const q = searchQ.toLowerCase();
     const mQ = !q || m.title?.toLowerCase().includes(q) || m.notes?.toLowerCase().includes(q) ||
-      (m.versions||[]).some(v=>v.genre?.toLowerCase().includes(q)||(v.themes||[]).some(t=>t.toLowerCase().includes(q)));
+      m.lyrics?.toLowerCase().includes(q) ||
+      (m.versions||[]).some(v=>v.genre?.toLowerCase().includes(q)||(v.themes||[]).some(t=>t.toLowerCase().includes(q))||v.versionSummary?.toLowerCase().includes(q));
     const mP = filterPersona==='all' || (filterPersona==='__unassigned__'
       ? (m.versions||[]).some(v=>!v.persona||!personas.find(p=>p.id===v.persona))
       : (m.versions||[]).some(v=>v.persona===filterPersona));
@@ -860,6 +874,23 @@ export default function App() {
                               placeholder="Style description (used by AI for routing)…"
                               rows={4}
                               style={{ background:'#111', border:'1px solid #252525', borderRadius:3, color:'#e8dcc8', padding:'7px 10px', fontSize:12, outline:'none', width:'100%', resize:'vertical', lineHeight:1.6 }} />
+                            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+                              <div>
+                                <label style={{ fontSize:9, letterSpacing:'0.15em', color:'#aaa', textTransform:'uppercase', display:'block', marginBottom:4 }}>Cover Art Status</label>
+                                <select value={p.coverArtStatus||'needed'} onChange={e=>handleUpdatePersona(p.id,'coverArtStatus',e.target.value)}
+                                  style={{ background:'#0d0d0d', border:'1px solid #1e1e1e', borderRadius:3, color:'#aaa', padding:'7px 10px', fontSize:12, outline:'none', width:'100%' }}>
+                                  <option value="needed">❌ Needed</option>
+                                  <option value="inprogress">🔧 In Progress</option>
+                                  <option value="done">✅ Done</option>
+                                </select>
+                              </div>
+                              <div>
+                                <label style={{ fontSize:9, letterSpacing:'0.15em', color:'#aaa', textTransform:'uppercase', display:'block', marginBottom:4 }}>Cover Art File / Note</label>
+                                <input value={p.coverArtFile||''} onChange={e=>handleUpdatePersona(p.id,'coverArtFile',e.target.value)}
+                                  placeholder="e.g. CrimsonGold_v4.png"
+                                  style={{ background:'#0d0d0d', border:'1px solid #1e1e1e', borderRadius:3, color:'#e8dcc8', padding:'7px 10px', fontSize:11, outline:'none', width:'100%' }} />
+                              </div>
+                            </div>
                             <div style={{ display:'flex', gap:6 }}>
                               <button onClick={()=>setEditingPersona(null)} style={{ background:'#C8942A', border:'none', borderRadius:3, color:'#fff', padding:'5px 16px', fontSize:11, cursor:'pointer' }}>Done</button>
                               <button onClick={()=>handleDeletePersona(p.id)} style={{ background:'transparent', border:'1px solid #2a1515', borderRadius:3, color:'#7a2020', padding:'5px 12px', fontSize:11, cursor:'pointer', marginLeft:'auto' }}>Remove</button>
@@ -868,7 +899,12 @@ export default function App() {
                         ) : (
                           <div style={{ display:'flex', alignItems:'center', gap:10 }}>
                             <div style={{ flex:1 }}>
-                              <div style={{ fontSize:13, color:p.color, marginBottom:2 }}>{p.name}</div>
+                              <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:2 }}>
+                                <div style={{ fontSize:13, color:p.color }}>{p.name}</div>
+                                <span style={{ fontSize:10, color: p.coverArtStatus==='done'?'#34D399':p.coverArtStatus==='inprogress'?'#C8942A':'#555' }}>
+                                  {p.coverArtStatus==='done'?'🖼 Cover ✓':p.coverArtStatus==='inprogress'?'🖼 In progress':'🖼 No cover'}
+                                </span>
+                              </div>
                               <div style={{ fontSize:11, color:'#bbb', fontStyle:'italic' }}>{p.desc||'No description'}</div>
                             </div>
                             <button onClick={()=>setEditingPersona(p.id)} style={{ background:'transparent', border:'1px solid #252525', borderRadius:3, color:'#bbb', padding:'4px 12px', fontSize:10, cursor:'pointer' }}>Edit</button>
@@ -1035,7 +1071,7 @@ export default function App() {
 
           {/* Filters */}
           <div style={{ display:'flex', gap:10, marginBottom:18, flexWrap:'wrap', alignItems:'center' }}>
-            <input value={searchQ} onChange={e=>setSearchQ(e.target.value)} placeholder="Search songs…"
+            <input value={searchQ} onChange={e=>setSearchQ(e.target.value)} placeholder="Search songs, lyrics…"
               style={{ background:'#111', border:'1px solid #1e1e1e', borderRadius:4, color:'#e8dcc8', padding:'8px 12px', fontSize:13, outline:'none', width:220 }} />
             <select value={filterPersona} onChange={e=>setFilterPersona(e.target.value)}
               style={{ background:'#111', border:'1px solid #1e1e1e', borderRadius:4, color:'#ccc', padding:'8px 12px', fontSize:12, outline:'none', cursor:'pointer' }}>
@@ -1066,18 +1102,19 @@ export default function App() {
           {view==='Dashboard' && (
             <div style={{ display:'grid', gap:14 }}>
 
-              {/* 4 action-oriented stat cards */}
-              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(180px,1fr))', gap:10 }}>
+              {/* Stat cards */}
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(160px,1fr))', gap:10 }}>
                 {[
-                  { label:'On Spotify', count: masters.filter(m=>m.versions.some(v=>v.takes.some(t=>t.releaseStatus==='released'))).length, color:'#34D399', sub:'released to the public' },
-                  { label:'Ready to Release', count: masters.filter(m=>m.versions.some(v=>v.takes.some(t=>t.releaseStatus==='ready'))).length, color:'#C8942A', sub:'waiting to go live' },
-                  { label:'Under Review', count: masters.filter(m=>m.versions.some(v=>v.takes.some(t=>t.stage==='reviewing'))).length, color:'#5B8DD9', sub:'listening & deciding' },
-                  { label:'Missing Lyrics', count: masters.filter(m=>!m.lyrics||!m.lyrics.trim()).length, color:'#8B5CF6', sub:'not yet in the app' },
+                  { label:'Live on Spotify', count:dash.dkLive, color:'#34D399', sub:'released & streaming' },
+                  { label:'Submitted', count:dash.dkSubmitted, color:'#5B8DD9', sub:'waiting for release date' },
+                  { label:'Checklist Ready', count:dash.checklistReady, color:'#C8942A', sub:'ready to submit to DK' },
+                  { label:'Total Songs', count:dash.total, color:'#888', sub:`${dash.totalVersions} recordings` },
+                  { label:'Missing Lyrics', count:masters.filter(m=>!m.lyrics||!m.lyrics.trim()).length, color:'#8B5CF6', sub:'not yet in the app' },
                 ].map(s=>(
-                  <div key={s.label} style={{ background:'#0f0f0f', border:`1px solid ${s.color}33`, borderTop:`3px solid ${s.color}`, borderRadius:6, padding:'18px 16px' }}>
-                    <div style={{ fontSize:34, color:s.color, lineHeight:1, marginBottom:6 }}>{s.count}</div>
-                    <div style={{ fontSize:12, color:'#ccc', marginBottom:3 }}>{s.label}</div>
-                    <div style={{ fontSize:10, color:'#aaa' }}>{s.sub}</div>
+                  <div key={s.label} style={{ background:'#0f0f0f', border:`1px solid ${s.color}33`, borderTop:`3px solid ${s.color}`, borderRadius:6, padding:'16px 14px' }}>
+                    <div style={{ fontSize:32, color:s.color, lineHeight:1, marginBottom:5 }}>{s.count}</div>
+                    <div style={{ fontSize:11, color:'#ccc', marginBottom:2 }}>{s.label}</div>
+                    <div style={{ fontSize:10, color:'#666' }}>{s.sub}</div>
                   </div>
                 ))}
               </div>
@@ -1086,34 +1123,55 @@ export default function App() {
               {dash.byPersona.length>0 && (
                 <div style={{ background:'#0f0f0f', border:'1px solid #1a1a1a', borderRadius:6, padding:18 }}>
                   <div style={{ fontSize:10, letterSpacing:'0.2em', color:'#bbb', textTransform:'uppercase', marginBottom:14 }}>Songs by Artist</div>
-                  {dash.byPersona.map(p=>{
+                  {dash.byPersona.filter(p=>p.count>0).map(p=>{
                     const readyCount = masters.filter(m=>m.versions.some(v=>v.persona===p.id&&v.takes.some(t=>t.releaseStatus==='ready'||t.releaseStatus==='released'))).length;
-                    const isEmpty = p.count === 0;
+                    const caStatus = p.coverArtStatus||'needed';
+                    const caColor = caStatus==='done'?'#34D399':caStatus==='inprogress'?'#C8942A':'#444';
+                    const caIcon = caStatus==='done'?'🖼✓':caStatus==='inprogress'?'🖼…':'🖼';
                     return (
-                      <div key={p.id} style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10, opacity: isEmpty ? 0.35 : 1 }}>
-                        <div style={{ fontSize:12, color:p.color, width:170, flexShrink:0 }}>{p.name}</div>
+                      <div key={p.id} style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
+                        <div style={{ fontSize:11, color:p.color, width:150, flexShrink:0, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{p.name}</div>
                         <div style={{ flex:1, height:5, background:'#141414', borderRadius:2, overflow:'hidden' }}>
                           <div style={{ width:`${(p.count/Math.max(dash.totalVersions,1))*100}%`, height:'100%', background:p.color+'66', borderRadius:2 }} />
                         </div>
-                        <div style={{ fontSize:11, color: isEmpty ? '#444' : '#bbb', width:60, textAlign:'right', flexShrink:0 }}>{isEmpty ? '—' : `${p.count} songs`}</div>
-                        {readyCount>0 && <div style={{ fontSize:10, color:'#C8942A', width:60, textAlign:'right', flexShrink:0 }}>{readyCount} ready</div>}
+                        <div style={{ fontSize:11, color:'#bbb', width:50, textAlign:'right', flexShrink:0 }}>{p.count}</div>
+                        <div title={`Cover art: ${caStatus}`} style={{ fontSize:11, color:caColor, width:28, textAlign:'right', flexShrink:0 }}>{caIcon}</div>
+                        {readyCount>0 && <div style={{ fontSize:10, color:'#C8942A', width:50, textAlign:'right', flexShrink:0 }}>{readyCount} ready</div>}
                       </div>
                     );
                   })}
                 </div>
               )}
 
-              {/* Top themes */}
+              {/* Top themes — bar chart */}
               {dash.topThemes.length>0 && (
                 <div style={{ background:'#0f0f0f', border:'1px solid #1a1a1a', borderRadius:6, padding:18 }}>
                   <div style={{ fontSize:10, letterSpacing:'0.2em', color:'#bbb', textTransform:'uppercase', marginBottom:14 }}>Top Themes Across Catalog</div>
-                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'6px 24px' }}>
-                    {dash.topThemes.map(([t,c])=>(
-                      <div key={t} style={{ display:'flex', justifyContent:'space-between', fontSize:12 }}>
-                        <span style={{ color:'#bbb' }}>{t}</span><span style={{ color:'#C8942A' }}>{c}</span>
+                  {dash.topThemes.map(([t,c])=>(
+                    <div key={t} style={{ display:'flex', alignItems:'center', gap:10, marginBottom:8 }}>
+                      <div style={{ fontSize:11, color:'#bbb', width:130, flexShrink:0 }}>{t}</div>
+                      <div style={{ flex:1, height:5, background:'#141414', borderRadius:2, overflow:'hidden' }}>
+                        <div style={{ width:`${(c/Math.max(dash.total,1))*100}%`, height:'100%', background:'#C8942A88', borderRadius:2 }} />
                       </div>
-                    ))}
-                  </div>
+                      <div style={{ fontSize:11, color:'#C8942A', width:36, textAlign:'right', flexShrink:0 }}>{c}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Stage breakdown — bar chart */}
+              {dash.byStage.some(s=>s.count>0) && (
+                <div style={{ background:'#0f0f0f', border:'1px solid #1a1a1a', borderRadius:6, padding:18 }}>
+                  <div style={{ fontSize:10, letterSpacing:'0.2em', color:'#bbb', textTransform:'uppercase', marginBottom:14 }}>Production Stage Breakdown</div>
+                  {dash.byStage.filter(s=>s.count>0).map(s=>(
+                    <div key={s.id} style={{ display:'flex', alignItems:'center', gap:10, marginBottom:8 }}>
+                      <div style={{ fontSize:11, color:s.color, width:130, flexShrink:0 }}>{s.icon} {s.label}</div>
+                      <div style={{ flex:1, height:5, background:'#141414', borderRadius:2, overflow:'hidden' }}>
+                        <div style={{ width:`${(s.count/Math.max(dash.totalVersions,1))*100}%`, height:'100%', background:s.color+'88', borderRadius:2 }} />
+                      </div>
+                      <div style={{ fontSize:11, color:s.color, width:36, textAlign:'right', flexShrink:0 }}>{s.count}</div>
+                    </div>
+                  ))}
                 </div>
               )}
 
@@ -1142,7 +1200,7 @@ export default function App() {
           )}
 
           {/* Song list — grouped by view */}
-          {view !== 'Dashboard' && (() => {
+          {view !== 'Dashboard' && view !== 'Release Calendar' && (() => {
             const sorted = [...filtered].sort((a,b)=>a.title.localeCompare(b.title));
             let groups = [];
             if (view==='Alphabetical') {
@@ -1205,13 +1263,154 @@ export default function App() {
                       onAddTake={handleAddTake} onUpdateTake={updateTake} onSetPrimary={setPrimaryTake}
                       onUpdateMaster={updateMaster} onUpdateVersion={updateVersion}
                       onDeleteMaster={deleteMaster} onDeleteVersion={deleteVersion} onDeleteTake={deleteTake}
-                      savePersonas={savePersonas} flash={flash}
+                      savePersonas={savePersonas} flash={flash} searchQ={searchQ}
                     />
                   ))}
                 </div>
               );
             });
           })()}
+        </div>
+      )}
+
+      {/* Release Calendar View */}
+      {activeTab==='catalog' && view==='Release Calendar' && (() => {
+        // Collect all versions with a release date or completed checklist
+        const today = new Date(); today.setHours(0,0,0,0);
+        const entries = [];
+        masters.forEach(master => {
+          (master.versions||[]).forEach(version => {
+            const dk = version.distrokid || {};
+            const t0 = version.takes?.[0] || {};
+            const autos = [!!(t0.sunoUrl?.trim()), !!(version.genre && version.mood && version.themes?.length > 0), !!(master.lyrics?.trim())];
+            const manuals = [version.releaseChecklist?.listened, version.releaseChecklist?.coverArt, version.releaseChecklist?.audioDownloaded];
+            const checklistDone = [...autos, ...manuals].filter(Boolean).length === 6;
+            const hasDate = !!(dk.releaseDate?.trim());
+            if (hasDate || checklistDone || dk.submittedDate) {
+              entries.push({ master, version, dk, checklistDone });
+            }
+          });
+        });
+        // Split into dated and undated
+        const dated = entries.filter(e=>e.dk.releaseDate?.trim()).sort((a,b)=>a.dk.releaseDate.localeCompare(b.dk.releaseDate));
+        const undated = entries.filter(e=>!e.dk.releaseDate?.trim());
+        // Group dated by month
+        const byMonth = {};
+        dated.forEach(e => {
+          const d = new Date(e.dk.releaseDate + 'T00:00:00');
+          const key = d.toLocaleDateString('en-US',{year:'numeric',month:'long'});
+          if (!byMonth[key]) byMonth[key] = [];
+          byMonth[key].push(e);
+        });
+        const renderEntry = (e) => {
+          const p = getP(e.version.persona, personas);
+          const dk = e.dk;
+          const isLive = !!(dk.spotifyUrl?.trim());
+          const isSubmitted = !!(dk.submittedDate?.trim());
+          const releaseDate = dk.releaseDate?.trim();
+          let relDate = null;
+          let isPast = false;
+          let isToday = false;
+          if (releaseDate) {
+            relDate = new Date(releaseDate + 'T00:00:00');
+            isPast = relDate < today;
+            isToday = relDate.getTime() === today.getTime();
+          }
+          const statusColor = isLive ? '#34D399' : isSubmitted ? '#5B8DD9' : e.checklistDone ? '#C8942A' : '#666';
+          const statusLabel = isLive ? '🟢 Live' : isSubmitted ? '📬 Submitted' : e.checklistDone ? '✓ Ready' : '○ Checklist incomplete';
+          return (
+            <div key={e.version.id} style={{ display:'flex', gap:12, padding:'12px 14px', background: isToday?'#1a1500':'#0d0d0d', border:`1px solid ${isToday?'#C8942A33':isLive?'#34D39922':'#1a1a1a'}`, borderLeft:`3px solid ${p.color}`, borderRadius:4, marginBottom:6 }}>
+              {/* Date block */}
+              <div style={{ flexShrink:0, width:52, textAlign:'center' }}>
+                {relDate ? (
+                  <>
+                    <div style={{ fontSize:22, fontWeight:700, color: isPast&&!isLive?'#444':p.color, lineHeight:1 }}>{relDate.getDate()}</div>
+                    <div style={{ fontSize:9, color:'#555', letterSpacing:'0.1em', textTransform:'uppercase' }}>{relDate.toLocaleDateString('en-US',{weekday:'short'})}</div>
+                  </>
+                ) : (
+                  <div style={{ fontSize:10, color:'#444', marginTop:4 }}>No date</div>
+                )}
+              </div>
+              {/* Main info */}
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontSize:13, color: isPast&&!isLive?'#666':'#f0e8d8', marginBottom:3, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{e.master.title}</div>
+                <div style={{ fontSize:11, color:p.color, letterSpacing:'0.08em', marginBottom:4 }}>{p.name} · {e.version.genre}</div>
+                <div style={{ display:'flex', alignItems:'center', gap:10, flexWrap:'wrap' }}>
+                  <span style={{ fontSize:10, color:statusColor }}>{statusLabel}</span>
+                  {dk.hyperFollowUrl && <a href={dk.hyperFollowUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize:10, color:'#C8942A', textDecoration:'none' }}>🔗 HyperFollow</a>}
+                  {dk.spotifyUrl && <a href={dk.spotifyUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize:10, color:'#34D399', textDecoration:'none' }}>🎧 Spotify</a>}
+                </div>
+              </div>
+              {/* Days until */}
+              {relDate && !isPast && !isToday && (
+                <div style={{ flexShrink:0, textAlign:'right' }}>
+                  <div style={{ fontSize:18, fontWeight:700, color:'#333' }}>{Math.round((relDate-today)/(1000*60*60*24))}</div>
+                  <div style={{ fontSize:9, color:'#444', letterSpacing:'0.08em' }}>days</div>
+                </div>
+              )}
+              {isToday && <div style={{ flexShrink:0, fontSize:10, color:'#C8942A', fontWeight:700, alignSelf:'center' }}>TODAY</div>}
+              {isPast && !isLive && <div style={{ flexShrink:0, fontSize:10, color:'#444', alignSelf:'center' }}>passed</div>}
+            </div>
+          );
+        };
+        return (
+          <div style={{ paddingBottom:20 }}>
+            {Object.keys(byMonth).length === 0 && undated.length === 0 && (
+              <div style={{ textAlign:'center', padding:'60px 20px', color:'#444', fontSize:13 }}>
+                No releases scheduled yet. Submit songs to DistroKid and log their release dates to see them here.
+              </div>
+            )}
+            {Object.entries(byMonth).map(([month, entries]) => (
+              <div key={month} style={{ marginBottom:24 }}>
+                <div style={{ fontSize:10, letterSpacing:'0.25em', color:'#555', textTransform:'uppercase', padding:'8px 2px', marginBottom:8, borderBottom:'1px solid #1a1a1a' }}>{month}</div>
+                {entries.map(renderEntry)}
+              </div>
+            ))}
+            {undated.length > 0 && (
+              <div style={{ marginBottom:24 }}>
+                <div style={{ fontSize:10, letterSpacing:'0.25em', color:'#555', textTransform:'uppercase', padding:'8px 2px', marginBottom:8, borderBottom:'1px solid #1a1a1a' }}>Ready — No Date Set</div>
+                {undated.map(renderEntry)}
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* Onboarding Modal */}
+      {showOnboarding && masters.length === 0 && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.85)', zIndex:2000, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
+          <div style={{ background:'#0f0f0f', border:'1px solid #2a2a2a', borderRadius:10, padding:'36px 32px', maxWidth:520, width:'100%', boxShadow:'0 20px 60px rgba(0,0,0,0.9)' }}>
+            <div style={{ fontSize:10, letterSpacing:'0.3em', color:'#C8942A', textTransform:'uppercase', marginBottom:10 }}>Welcome</div>
+            <div style={{ fontSize:22, color:'#f0e8d8', marginBottom:8, lineHeight:1.3 }}>Your Music Catalog</div>
+            <div style={{ fontSize:13, color:'#888', lineHeight:1.7, marginBottom:28 }}>
+              This app helps you manage your entire AI-generated music catalog — organize songs by artist persona, track your release pipeline, and submit to DistroKid with confidence. Three steps to get started:
+            </div>
+            <div style={{ display:'grid', gap:12, marginBottom:28 }}>
+              {[
+                { num:'1', title:'Create an Artist Persona', desc:'Go to Settings → Personas and set up your first artist. Each persona is a distinct musical identity — genre, style, audience.', action:'Settings → Personas', color:'#C8942A' },
+                { num:'2', title:'Add Your First Song', desc:'Click "New Song" in the top bar. Paste your lyrics and Suno URL. The AI will suggest the right persona and fill in the metadata automatically.', action:'New Song button', color:'#5B8DD9' },
+                { num:'3', title:'Connect Google Drive', desc:'Go to Settings → General and connect Drive. Your catalog saves automatically. No data is ever lost between sessions.', action:'Settings → General', color:'#34D399' },
+              ].map(step => (
+                <div key={step.num} style={{ display:'flex', gap:14, padding:'12px 14px', background:'#141414', border:`1px solid ${step.color}22`, borderLeft:`3px solid ${step.color}`, borderRadius:5 }}>
+                  <div style={{ fontSize:18, fontWeight:700, color:step.color, flexShrink:0, lineHeight:1.2 }}>{step.num}</div>
+                  <div>
+                    <div style={{ fontSize:12, color:'#e8dcc8', marginBottom:3 }}>{step.title}</div>
+                    <div style={{ fontSize:11, color:'#777', lineHeight:1.6 }}>{step.desc}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div style={{ display:'flex', gap:10 }}>
+              <button onClick={()=>{ dismissOnboarding(); setShowSettings(true); setSettingsTab('personas'); }}
+                style={{ flex:1, background:'linear-gradient(135deg,#C8942A,#9a7018)', border:'none', borderRadius:5, color:'#fff', padding:'12px 0', fontSize:12, letterSpacing:'0.1em', textTransform:'uppercase', cursor:'pointer' }}>
+                Set Up Personas →
+              </button>
+              <button onClick={dismissOnboarding}
+                style={{ background:'transparent', border:'1px solid #252525', borderRadius:5, color:'#666', padding:'12px 16px', fontSize:11, cursor:'pointer' }}>
+                Skip
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
