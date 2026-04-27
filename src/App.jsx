@@ -91,7 +91,11 @@ export default function App() {
   const [showOnboarding, setShowOnboarding] = useState(() => {
     return !localStorage.getItem('tmsg-onboarding-done');
   });
-  const dismissOnboarding = () => { localStorage.setItem('tmsg-onboarding-done','1'); setShowOnboarding(false); };
+  const dismissOnboarding = () => {
+    localStorage.setItem('tmsg-onboarding-done','1');
+    setShowOnboarding(false);
+    if (!getToken()) startOAuth();
+  };
   const [driveStatus, setDriveStatus] = useState('');
   const [driveExpired, setDriveExpired] = useState(false);
 
@@ -107,8 +111,11 @@ export default function App() {
       if (stored) try { setMasters(JSON.parse(stored)); } catch(e) {}
       const fid = localStorage.getItem(FID_KEY);
       if (fid) setDriveFileId(fid);
-      // Auto-prompt to connect Drive on every launch — no silent fallback
-      startOAuth();
+      // Only auto-redirect to OAuth if user has been here before
+      // New users see the onboarding modal first; OAuth fires after they dismiss it
+      if (localStorage.getItem('tmsg-onboarding-done')) {
+        startOAuth();
+      }
     }
   }, []);
 
@@ -1377,7 +1384,7 @@ export default function App() {
       })()}
 
       {/* Onboarding Modal */}
-      {showOnboarding && masters.length === 0 && (
+      {showOnboarding && (
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.85)', zIndex:2000, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
           <div style={{ background:'#0f0f0f', border:'1px solid #2a2a2a', borderRadius:10, padding:'36px 32px', maxWidth:520, width:'100%', boxShadow:'0 20px 60px rgba(0,0,0,0.9)' }}>
             <div style={{ fontSize:10, letterSpacing:'0.3em', color:'#C8942A', textTransform:'uppercase', marginBottom:10 }}>Welcome</div>
