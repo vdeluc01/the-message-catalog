@@ -514,7 +514,8 @@ export default function App() {
       genre:ai.genre||'', themes:ai.themes||[], mood:ai.mood||'',
       instrumentalMood:ai.instrumentalMood||'', targetAudience:ai.targetAudience||'',
       duration:ai.duration||'', versionSummary:ai.versionSummary||'',
-      albumNote:ai.albumNote||'', addedAt:new Date().toISOString(), takes:[firstTake] };
+      albumNote:ai.albumNote||'', addedAt:new Date().toISOString(), takes:[firstTake],
+      releaseChecklist:{ listened:false, coverArt:false, audioDownloaded:false } };
     save(masters.map(m=>m.id!==masterId?m:{...m,versions:[...m.versions,newVersion]}));
     setAddingVersionTo(null); setAddVersionForm({label:'',stylePrompt:'',firstTakeUrl:'',stage:'idea',releaseStatus:'draft'});
     setAddVersionAnalysis(null); setAddVersionConfirming(false);

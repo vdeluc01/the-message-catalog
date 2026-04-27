@@ -127,6 +127,22 @@ function VersionBlock({ version, master, p, isVersionExpanded, onToggleVersion, 
           <div style={{ display:'flex', gap:6, alignItems:'center' }}>
             {version.takes?.[0] && <StagePill take={version.takes.find(t=>t.isPrimary)||version.takes[0]} masterLyrics={master.lyrics} />}
             {version.takes?.[0] && <StatusBadge status={(version.takes.find(t=>t.isPrimary)||version.takes[0]).releaseStatus} />}
+            {(() => {
+              const t0 = version.takes?.[0] || {};
+              const autos = [!!(t0.sunoUrl?.trim()), !!(version.genre && version.mood && version.themes?.length > 0), !!(master.lyrics?.trim())];
+              const manuals = [version.releaseChecklist?.listened, version.releaseChecklist?.coverArt, version.releaseChecklist?.audioDownloaded];
+              const done = [...autos, ...manuals].filter(Boolean).length;
+              const all = done === 6;
+              return (
+                <span style={{ fontSize:10, padding:'2px 7px', borderRadius:3,
+                               background: all ? '#34D39922' : '#1a1a1a',
+                               border: `1px solid ${all ? '#34D399' : '#2a2a2a'}`,
+                               color: all ? '#34D399' : '#666',
+                               letterSpacing:'0.05em', whiteSpace:'nowrap' }}>
+                  {all ? '✓ Ready' : `${done}/6`}
+                </span>
+              );
+            })()}
             <button onClick={e=>{ e.stopPropagation(); setQuickAssignOpen(o=>!o); }}
               style={{ background: quickAssignOpen ? `${p.color}22` : 'transparent', border:`1px solid ${quickAssignOpen ? p.color : '#333'}`,
                        borderRadius:3, color: quickAssignOpen ? p.color : '#888', padding:'3px 9px', fontSize:10,
@@ -237,6 +253,52 @@ function VersionBlock({ version, master, p, isVersionExpanded, onToggleVersion, 
               </div>
               {version.versionSummary && <div style={{ fontSize:12, color:'#bbb', lineHeight:1.7, marginBottom:8 }}>{version.versionSummary}</div>}
               {version.albumNote && <div style={{ fontSize:11, color:'#aaa', fontStyle:'italic', marginBottom:12 }}>📀 {version.albumNote}</div>}
+              {/* Release Checklist */}
+              {(() => {
+                const t0 = version.takes?.[0] || {};
+                const checks = [
+                  { key:'auto-url',         label:'Suno URL present',       auto:true,  done: !!(t0.sunoUrl?.trim()) },
+                  { key:'auto-meta',        label:'Metadata complete',      auto:true,  done: !!(version.genre && version.mood && version.themes?.length > 0) },
+                  { key:'auto-lyrics',      label:'Lyrics added',           auto:true,  done: !!(master.lyrics?.trim()) },
+                  { key:'listened',         label:'Listened end-to-end',    auto:false, done: !!(version.releaseChecklist?.listened) },
+                  { key:'coverArt',         label:'Cover art ready',        auto:false, done: !!(version.releaseChecklist?.coverArt) },
+                  { key:'audioDownloaded',  label:'Audio file downloaded',  auto:false, done: !!(version.releaseChecklist?.audioDownloaded) },
+                ];
+                const doneCount = checks.filter(c=>c.done).length;
+                const allDone = doneCount === 6;
+                return (
+                  <div style={{ marginBottom:14 }}>
+                    <div style={{ fontSize:9, letterSpacing:'0.2em', color:'#555', textTransform:'uppercase', marginBottom:7 }}>Release Checklist</div>
+                    <div style={{ background:'#0c0c0c', border:`1px solid ${allDone?'#34D39933':'#1e1e1e'}`, borderRadius:5, padding:'10px 12px' }}>
+                      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
+                        <span style={{ fontSize:11, color:allDone?'#34D399':'#888' }}>
+                          {allDone ? '✓ Ready to Submit' : `${doneCount} of 6 complete`}
+                        </span>
+                        {allDone && <span style={{ fontSize:9, color:'#34D399', letterSpacing:'0.15em', textTransform:'uppercase' }}>DistroKid Ready</span>}
+                      </div>
+                      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:5 }}>
+                        {checks.map(c=>(
+                          <div key={c.key}
+                            onClick={()=>{
+                              if (!c.auto) {
+                                const cur = version.releaseChecklist || {};
+                                onUpdateVersion(master.id, version.id, { releaseChecklist:{ ...cur, [c.key]: !cur[c.key] } });
+                              }
+                            }}
+                            style={{ display:'flex', alignItems:'center', gap:6, padding:'5px 7px', borderRadius:3,
+                                     background:c.done?'#0f1a0f':'#0a0a0a',
+                                     border:`1px solid ${c.done?'#34D39933':'#1a1a1a'}`,
+                                     cursor:c.auto?'default':'pointer' }}>
+                            <span style={{ fontSize:12, lineHeight:1, flexShrink:0 }}>{c.done?'✅':'⬜'}</span>
+                            <span style={{ fontSize:10, color:c.done?'#34D399':'#888', flex:1 }}>{c.label}</span>
+                            {c.auto && <span style={{ fontSize:8, color:'#333' }}>auto</span>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
               <button onClick={()=>{ setVEditForm({ label:version.label||'', persona:version.persona||'',
                 stylePrompt:version.takes?.[0]?.stylePrompt||'', genre:version.genre||'',
                 mood:version.mood||'', instrumentalMood:version.instrumentalMood||'',
