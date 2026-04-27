@@ -71,7 +71,7 @@ function TakeBlock({ take, master, version, p, effStage, isAutoDetected, onUpdat
           <div><label style={{ fontSize:9, letterSpacing:'0.15em', color:'#aaa', textTransform:'uppercase', display:'block', marginBottom:4 }}>Suno URL</label>
             <input value={editForm.sunoUrl} onChange={e=>setEditForm(f=>({...f,sunoUrl:e.target.value}))} placeholder="https://suno.com/s/…" style={fi} /></div>
           <div><label style={{ fontSize:9, letterSpacing:'0.15em', color:'#aaa', textTransform:'uppercase', display:'block', marginBottom:4 }}>Suno Creation Date</label>
-            <input value={editForm.sunoCreatedAt} onChange={e=>setEditForm(f=>({...f,sunoCreatedAt:e.target.value}))} placeholder="YYYY-MM-DD or YYYY-MM-DDTHH:MM:SSZ" style={fi} /></div>
+            <input type="date" value={(editForm.sunoCreatedAt||'').slice(0,10)} onChange={e=>setEditForm(f=>({...f,sunoCreatedAt:e.target.value}))} style={fi} /></div>
           <div><label style={{ fontSize:9, letterSpacing:'0.15em', color:'#aaa', textTransform:'uppercase', display:'block', marginBottom:4 }}>Style Prompt</label>
             <textarea value={editForm.stylePrompt} onChange={e=>setEditForm(f=>({...f,stylePrompt:e.target.value}))} rows={2}
               style={{ ...fi, resize:'vertical', lineHeight:1.6, fontFamily:'Georgia,serif' }} /></div>
@@ -368,9 +368,9 @@ function VersionBlock({ version, master, p, isVersionExpanded, onToggleVersion, 
                         <div style={{ display:'grid', gap:8 }}>
                           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
                             <div><label style={{ fontSize:9, letterSpacing:'0.12em', color:'#aaa', textTransform:'uppercase', display:'block', marginBottom:3 }}>Submitted Date</label>
-                              <input value={dkForm.submittedDate} onChange={e=>setDkForm(f=>({...f,submittedDate:e.target.value}))} placeholder="YYYY-MM-DD" style={fi2} /></div>
+                              <input type="date" value={dkForm.submittedDate} onChange={e=>setDkForm(f=>({...f,submittedDate:e.target.value}))} style={fi2} /></div>
                             <div><label style={{ fontSize:9, letterSpacing:'0.12em', color:'#aaa', textTransform:'uppercase', display:'block', marginBottom:3 }}>Release Date</label>
-                              <input value={dkForm.releaseDate} onChange={e=>setDkForm(f=>({...f,releaseDate:e.target.value}))} placeholder="YYYY-MM-DD" style={fi2} /></div>
+                              <input type="date" value={dkForm.releaseDate} onChange={e=>setDkForm(f=>({...f,releaseDate:e.target.value}))} style={fi2} /></div>
                           </div>
                           <div><label style={{ fontSize:9, letterSpacing:'0.12em', color:'#aaa', textTransform:'uppercase', display:'block', marginBottom:3 }}>HyperFollow URL</label>
                             <input value={dkForm.hyperFollowUrl} onChange={e=>setDkForm(f=>({...f,hyperFollowUrl:e.target.value}))} placeholder="https://distrokid.com/hyperfollow/…" style={fi2} /></div>
