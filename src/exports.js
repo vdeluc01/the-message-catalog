@@ -280,3 +280,69 @@ ${take?.sunoUrl?`<div class="song-link">Listen: <a href="${take.sunoUrl}">${take
   ));
   return '✓ Curator PDF opened — use Print to save';
 }
+
+// ── 5. Lyrics Bulk Upload (Musixmatch / Genius) ────────────────────────
+// One row per Version (persona-recording). Lyrics live on the Master and
+// are duplicated across each persona's row — that's intentional. Musixmatch
+// matches on Title + Artist, so each persona needs its own claimable row
+// even though the lyrics are identical. Songwriter column ties everything
+// back to one human writer for credit/royalty purposes.
+
+// Smart/curly punctuation tends to confuse older bulk-upload scripts.
+// Convert to straight ASCII equivalents. Newlines in lyrics are preserved
+// (they sit inside the quoted CSV field per RFC 4180).
+function sanitizeLyrics(s) {
+  if (!s) return '';
+  return String(s)
+    .replace(/[‘’‚‛]/g, "'")   // single curly quotes
+    .replace(/[“”„‟]/g, '"')   // double curly quotes
+    .replace(/[–—]/g, '-')                // en/em dash
+    .replace(/…/g, '...')                      // ellipsis
+    .replace(/ /g, ' ');                       // non-breaking space
+}
+
+export function exportLyricsCSV(masters, personas) {
+  const SONGWRITER = 'Vito DeLuca';
+  const DEFAULT_ALBUM = 'The Archive';
+
+  const rows = [['track_title','artist_name','album_title','lyrics','isrc','duration','songwriter']];
+
+  const withLyrics = [...masters]
+    .filter(m => m.lyrics && m.lyrics.trim())
+    .sort((a,b) => a.title.localeCompare(b.title));
+
+  let rowCount = 0;
+  withLyrics.forEach(m => {
+    const cleanLyrics = sanitizeLyrics(m.lyrics);
+    m.versions.forEach(v => {
+      const p = getP(v.persona, personas);
+      if (!p || !p.name) return;
+      const take = v.takes?.find(t=>t.isPrimary) || v.takes?.[0];
+      const isrc = take?.isrc || '';
+      const duration = v.duration || '';   // expected MM:SS or blank
+      rows.push([
+        m.title,
+        p.name,
+        DEFAULT_ALBUM,
+        cleanLyrics,
+        isrc,
+        duration,
+        SONGWRITER
+      ]);
+      rowCount++;
+    });
+  });
+
+  // Build CSV with CSV-RFC quoting (every field wrapped in "..."
+  // and embedded " escaped as ""). Prepend UTF-8 BOM so Excel and
+  // strict uploaders detect the encoding correctly. Apostrophes and
+  // dashes survive intact.
+  const csv = rows
+    .map(r => r.map(c => `"${String(c||'').replace(/"/g,'""')}"`).join(','))
+    .join('\n');
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
+  downloadCSV(blob, 'the-message-lyrics-musixmatch.csv');
+
+  const skipped = masters.length - withLyrics.length;
+  return `✓ Lyrics CSV exported — ${rowCount} rows from ${withLyrics.length} songs${skipped?` (${skipped} masters skipped: no lyrics)`:''}`;
+}

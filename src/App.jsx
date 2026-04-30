@@ -10,7 +10,8 @@ import {
   exportSupervisorCSV, exportSupervisorPDF,
   exportLabelCSV, exportLabelPDF,
   exportPublisherCSV, exportPublisherPDF,
-  exportCuratorCSV, exportCuratorPDF
+  exportCuratorCSV, exportCuratorPDF,
+  exportLyricsCSV
 } from './exports.js';
 import MasterRow from './components/MasterRow.jsx';
 import AddWizard from './components/AddWizard.jsx';
@@ -996,6 +997,16 @@ export default function App() {
                       <div style={eBtns}>
                         <button onClick={()=>flash(exportCuratorPDF(masters,personas))} style={ePDF}>📄 PDF</button>
                         <button onClick={()=>flash(exportCuratorCSV(masters,personas))} style={eCSV}>📊 CSV</button>
+                      </div>
+                    </div>
+
+                    <div style={eCard}>
+                      <div style={eTitle}>🎤 Lyrics Bulk Upload (Musixmatch / Genius)</div>
+                      <div style={eDesc}>
+                        For claiming lyric ownership on Musixmatch Pro and Genius before songs go live on streaming. One row per persona-recording with full lyrics, CSV-RFC quoted, UTF-8 with BOM. Songwriter column credits <strong>Vito DeLuca</strong> on every row to create a writer-level common thread across all personas. Smart quotes sanitized to ASCII for older bulk uploaders.
+                      </div>
+                      <div style={eBtns}>
+                        <button onClick={()=>flash(exportLyricsCSV(masters,personas))} style={eCSV}>📊 CSV</button>
                       </div>
                     </div>
                   </>
