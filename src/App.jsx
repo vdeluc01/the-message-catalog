@@ -13,6 +13,7 @@ import {
   exportCuratorCSV, exportCuratorPDF,
   exportLyricsCSV
 } from './exports.js';
+import Tour from './Tour.jsx';
 import MasterRow from './components/MasterRow.jsx';
 import AddWizard from './components/AddWizard.jsx';
 import BatchAdd from './components/BatchAdd.jsx';
@@ -1025,7 +1026,7 @@ export default function App() {
       {/* HEADER */}
       <div style={{ background:'linear-gradient(180deg,#131313,#0a0a0a)', borderBottom:'1px solid #1e1e1e', padding:'16px 24px', display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:10 }}>
         <div>
-          <div style={{ fontSize:10, letterSpacing:'0.35em', color:'#C8942A', textTransform:'uppercase', marginBottom:3 }}>The Message Music Label</div>
+          <div style={{ fontSize:10, letterSpacing:'0.35em', color:'#C8942A', textTransform:'uppercase', marginBottom:3 }}>The Message Records</div>
           <div style={{ fontSize:22, color:'#f5ead8', letterSpacing:'0.04em' }}>Song Catalog</div>
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:16, flexWrap:'wrap' }}>
@@ -1050,6 +1051,7 @@ export default function App() {
               </div>
             ))}
           </div>
+          <button onClick={()=>{ if(window.startCatalogTour) window.startCatalogTour(); }} style={{ background:'transparent', border:'1px solid #C8942A', borderRadius:4, color:'#C8942A', padding:'8px 16px', fontSize:11, cursor:'pointer', letterSpacing:'0.12em', textTransform:'uppercase', marginRight:8 }}>★ Take Tour</button>
           <button onClick={()=>setShowSettings(true)} style={{ background:'transparent', border:'1px solid #252525', borderRadius:4, color:'#ccc', padding:'8px 16px', fontSize:11, cursor:'pointer', letterSpacing:'0.12em', textTransform:'uppercase' }}>⚙ Settings</button>
         </div>
       </div>
@@ -1443,6 +1445,8 @@ export default function App() {
           savePersonas={savePersonas} flash={flash}
         />
       )}
+
+      <Tour setView={setView} setShowSettings={setShowSettings} setSettingsTab={setSettingsTab} />
     </div>
   );
 }

@@ -40,7 +40,7 @@ export function pdfShell(title, subtitle, description, body, masters, personas) 
   @media print{.section{page-break-before:always}}
 </style></head><body>
 <div class="cover">
-  <div style="font-size:10px;letter-spacing:0.3em;color:#888;text-transform:uppercase;margin-bottom:10px">The Message Music Label</div>
+  <div style="font-size:10px;letter-spacing:0.3em;color:#888;text-transform:uppercase;margin-bottom:10px">The Message Records</div>
   <h1>${title}</h1>
   <h2>${subtitle}</h2>
   <div class="desc">${description}</div>
