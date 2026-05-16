@@ -6,6 +6,7 @@ export const PERSONAS_KEY = 'the-message-personas-v1';
 export const APIKEY_KEY   = 'tmsg-apikey';
 export const DATA_KEY     = 'tmsg-catalog-v4';
 export const FID_KEY      = 'tmsg-gdrive-fid';
+export const TOMBSTONES_KEY = 'tmsg-deleted-master-ids';
 
 export const PERSONA_COLORS = ['#C8942A','#C84A4A','#5B8DD9','#8B5CF6','#D97706','#6B7280','#34D399','#60A5FA','#FCD34D','#F87171','#A855F7','#E67E22'];
 

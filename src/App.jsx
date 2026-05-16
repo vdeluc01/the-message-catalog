@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef } from 'react';
-import { uid, getP, iBase, lBase, effectiveStage } from './utils.js';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { uid, getP, iBase, lBase, effectiveStage, checklistStatus } from './utils.js';
 import {
-  PERSONAS_KEY, APIKEY_KEY, DATA_KEY, FID_KEY,
+  PERSONAS_KEY, APIKEY_KEY, DATA_KEY, FID_KEY, TOMBSTONES_KEY,
   DEFAULT_PERSONAS, STAGES, RELEASE_STATUSES, VIEWS, PERSONA_COLORS, THEMES
 } from './constants.js';
 import { getToken, startOAuth, driveLoad, driveSave } from './drive.js';
@@ -56,7 +56,7 @@ export default function App() {
   // Settings tabs
   const [settingsTab, setSettingsTab] = useState('general');
   const [editingPersona, setEditingPersona] = useState(null);
-  const [newPersonaForm, setNewPersonaForm] = useState({ name:'', desc:'', color:'#C8942A' });
+  const [newPersonaForm, setNewPersonaForm] = useState({ name:'', genre:'', desc:'', color:'#C8942A' });
   const [apiKey, setApiKey] = useState(() => localStorage.getItem(APIKEY_KEY) || '');
 
   // Drive
@@ -120,9 +120,14 @@ export default function App() {
     }
   }, []);
 
-  // Auto-save to localStorage
+  // Auto-save to localStorage. Debounced 800ms so rapid edits (typing in a lyrics
+  // textarea, sliders, etc.) don't serialize the whole catalog on every keystroke.
+  // The first effect runs on mount, so initial state is captured immediately.
   useEffect(() => {
-    localStorage.setItem(DATA_KEY, JSON.stringify(masters));
+    const handle = setTimeout(() => {
+      try { localStorage.setItem(DATA_KEY, JSON.stringify(masters)); } catch (e) {}
+    }, 800);
+    return () => clearTimeout(handle);
   }, [masters]);
 
   // Auto-save to Google Drive — debounced 4s after any change + every 5 min
@@ -134,10 +139,13 @@ export default function App() {
   }, [masters, driveConnected]);
 
   useEffect(() => {
+    // 5-minute heartbeat save. Reads latest masters from localStorage at fire time
+    // (inside triggerDriveAutoSave), so we intentionally don't depend on `masters` here —
+    // otherwise every edit would reset the interval and it would effectively never fire.
     if (!driveConnected) return;
     const interval = setInterval(() => triggerDriveAutoSave(), 5 * 60 * 1000);
     return () => clearInterval(interval);
-  }, [driveConnected, driveFileId, masters]);
+  }, [driveConnected, driveFileId]);
 
   const save = (newMasters) => setMasters(newMasters);
   const flash = (msg, ms=2500) => { setSaveStatus(msg); setTimeout(()=>setSaveStatus(''), ms); };
@@ -165,7 +173,13 @@ export default function App() {
     try {
       const result = await driveLoad(token);
       if (result) {
-        const driveMasters = result.data.masters || [];
+        const rawDriveMasters = result.data.masters || [];
+        // Filter out anything the user has deleted locally — tombstones survive Drive reconnects
+        let tombstones = [];
+        try { tombstones = JSON.parse(localStorage.getItem(TOMBSTONES_KEY) || '[]'); } catch(_) {}
+        const tombSet = new Set(tombstones);
+        const driveMasters = rawDriveMasters.filter(m => !tombSet.has(m.id));
+        const droppedFromDrive = rawDriveMasters.length - driveMasters.length;
         const stored = localStorage.getItem(DATA_KEY);
         const localMasters = stored ? JSON.parse(stored) : [];
         const localIds = new Set(localMasters.map(m => m.id));
@@ -176,7 +190,8 @@ export default function App() {
         localStorage.setItem(FID_KEY, result.fileId);
         await driveSave(token, merged, result.fileId);
         if (driveOnly.length > 0) {
-          flashDrive(`✓ Reconnected — pulled in ${driveOnly.length} Drive-only song${driveOnly.length!==1?'s':''}`, 4000);
+          const tombMsg = droppedFromDrive > 0 ? ` (${droppedFromDrive} previously-deleted song${droppedFromDrive!==1?'s':''} kept deleted)` : '';
+          flashDrive(`✓ Reconnected — pulled in ${driveOnly.length} Drive-only song${driveOnly.length!==1?'s':''}${tombMsg}`, 4000);
         } else {
           flashDrive('✓ Connected — local changes pushed to Drive');
         }
@@ -258,10 +273,6 @@ export default function App() {
     save(fixed);
     flash(`✓ Recalculated ${changed} takes`);
   }
-
-  // Legacy export aliases
-  function handleExportExcel() { flash(exportLabelCSV(masters, personas)); }
-  function handleExportPDF() { flash(exportLabelPDF(masters, personas)); }
 
   // ── Bulk Reassess Personas ────────────────────────────────────────────────
   const [reassessing, setReassessing] = useState(false);
@@ -350,7 +361,12 @@ export default function App() {
             instrumentalMood: v.instrumentalMood || r.instrumentalMood || v.instrumentalMood,
             targetAudience: v.targetAudience   || r.targetAudience   || v.targetAudience,
             duration:       v.duration         || r.duration         || v.duration,
-            themes:         (v.themes&&v.themes.length) ? v.themes : ((r.themes||[]).filter(t=>THEMES.includes(t))||v.themes),
+            themes:         (v.themes&&v.themes.length)
+                              ? v.themes
+                              : (() => {
+                                  const filtered = (r.themes||[]).filter(t=>THEMES.includes(t));
+                                  return filtered.length ? filtered : (v.themes || []);
+                                })(),
             versionSummary: v.versionSummary   || r.versionSummary   || v.versionSummary,
             albumNote:      v.albumNote        || r.albumNote        || v.albumNote,
           };
@@ -412,6 +428,11 @@ export default function App() {
   }
   function handleImport(e) {
     const file = e.target.files[0]; if (!file) return;
+    const currentCount = masters.length;
+    const confirmMsg = currentCount > 0
+      ? `Loading this backup will REPLACE your entire current catalog (${currentCount} song${currentCount!==1?'s':''}). Any changes since this backup was made will be lost.\n\nContinue?`
+      : 'Load this backup as your catalog?';
+    if (!window.confirm(confirmMsg)) { e.target.value = ''; return; }
     const reader = new FileReader();
     reader.onload = ev => {
       try {
@@ -431,6 +452,13 @@ export default function App() {
               releaseStatus:v.releaseStatus||'draft', isPrimary:true, notes:'', addedAt:v.addedAt||new Date().toISOString() }]
           }))
         }));
+        // Restoring a backup explicitly resurrects whatever's in it — clear tombstones for those IDs
+        try {
+          const existing = JSON.parse(localStorage.getItem(TOMBSTONES_KEY) || '[]');
+          const loadedIds = new Set(loaded.map(m => m.id));
+          const remaining = existing.filter(id => !loadedIds.has(id));
+          if (remaining.length !== existing.length) localStorage.setItem(TOMBSTONES_KEY, JSON.stringify(remaining));
+        } catch(_) {}
         setMasters(loaded);
         flash('✓ '+loaded.length+' songs imported');
         e.target.value = '';
@@ -446,9 +474,16 @@ export default function App() {
   };
   const handleAddPersona = () => {
     if (!newPersonaForm.name.trim()) return;
-    const id = newPersonaForm.name.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
-    savePersonas([...personas, { id, name:newPersonaForm.name.trim(), color:newPersonaForm.color, desc:newPersonaForm.desc.trim(), genre:newPersonaForm.desc.trim() }]);
-    setNewPersonaForm({ name:'', desc:'', color:PERSONA_COLORS[Math.floor(Math.random()*PERSONA_COLORS.length)] });
+    const baseId = newPersonaForm.name.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'') || 'persona';
+    // Ensure uniqueness against existing persona IDs
+    let id = baseId;
+    let suffix = 2;
+    const existingIds = new Set(personas.map(p => p.id));
+    while (existingIds.has(id)) { id = `${baseId}-${suffix++}`; }
+    const desc = newPersonaForm.desc.trim();
+    const genre = (newPersonaForm.genre || '').trim() || desc.split(/[.,]/)[0].slice(0, 60);
+    savePersonas([...personas, { id, name:newPersonaForm.name.trim(), color:newPersonaForm.color, desc, genre }]);
+    setNewPersonaForm({ name:'', genre:'', desc:'', color:PERSONA_COLORS[Math.floor(Math.random()*PERSONA_COLORS.length)] });
   };
   const handleUpdatePersona = (id, field, value) => savePersonas(personas.map(p=>p.id===id?{...p,[field]:value}:p));
   const handleDeletePersona = (id) => {
@@ -492,7 +527,8 @@ export default function App() {
       genre:ai.genre||'', themes:ai.themes||[], mood:ai.mood||'',
       instrumentalMood:ai.instrumentalMood||'', targetAudience:ai.targetAudience||'',
       duration:ai.duration||'', versionSummary:ai.versionSummary||'',
-      albumNote:ai.albumNote||'', addedAt:new Date().toISOString(), takes:[firstTake] };
+      albumNote:ai.albumNote||'', addedAt:new Date().toISOString(), takes:[firstTake],
+      releaseChecklist:{ listened:false, coverArt:false, audioDownloaded:false } };
     const newMaster = { id:uid(), title:masterForm.title.trim(), lyrics:masterForm.lyrics.trim(),
       notes:masterForm.notes.trim(), addedAt:new Date().toISOString(), versions:[newVersion] };
     save([...masters, newMaster]);
@@ -571,7 +607,8 @@ export default function App() {
         genre:r.analysis.genre, themes:r.analysis.themes, mood:r.analysis.mood,
         instrumentalMood:r.analysis.instrumentalMood, targetAudience:r.analysis.targetAudience,
         duration:r.analysis.duration, versionSummary:r.analysis.versionSummary,
-        albumNote:r.analysis.albumNote, addedAt:new Date().toISOString(), takes:[firstTake] };
+        albumNote:r.analysis.albumNote, addedAt:new Date().toISOString(), takes:[firstTake],
+        releaseChecklist:{ listened:false, coverArt:false, audioDownloaded:false } };
       return { id:uid(), title:r.title.trim(), lyrics:r.lyrics.trim(), notes:'',
         addedAt:new Date().toISOString(), versions:[ver] };
     });
@@ -621,7 +658,19 @@ export default function App() {
   }
 
   // ── Delete ──
-  function deleteMaster(id) { if(confirm('Delete this song and all its versions?')) { save(masters.filter(m=>m.id!==id)); setExpandedMaster(null); } }
+  function deleteMaster(id) {
+    if (!confirm('Delete this song and all its versions?')) return;
+    // Record tombstone so Drive reconnect doesn't resurrect this song
+    try {
+      const existing = JSON.parse(localStorage.getItem(TOMBSTONES_KEY) || '[]');
+      if (!existing.includes(id)) {
+        existing.push(id);
+        localStorage.setItem(TOMBSTONES_KEY, JSON.stringify(existing));
+      }
+    } catch(_) {}
+    save(masters.filter(m=>m.id!==id));
+    setExpandedMaster(null);
+  }
   function deleteVersion(masterId, versionId) {
     if(!confirm('Delete this version?')) return;
     save(masters.map(m=>m.id!==masterId?m:{...m,versions:m.versions.filter(v=>v.id!==versionId)}));
@@ -632,10 +681,10 @@ export default function App() {
   }
 
   // ── Computed ──
-  const allVersions = masters.flatMap(m=>m.versions||[]);
-  const allTakes    = allVersions.flatMap(v=>v.takes||[]);
+  const allVersions = useMemo(() => masters.flatMap(m=>m.versions||[]), [masters]);
+  const allTakes    = useMemo(() => allVersions.flatMap(v=>v.takes||[]), [allVersions]);
 
-  const dash = {
+  const dash = useMemo(() => ({
     total: masters.length, totalVersions: allVersions.length,
     byStage: STAGES.map(s=>({...s, count: allTakes.filter(t=>(t.stage||'idea')===s.id).length})),
     byStatus: RELEASE_STATUSES.map(r=>({...r, count:allTakes.filter(t=>(t.releaseStatus||'draft')===r.id).length})),
@@ -645,14 +694,11 @@ export default function App() {
     dkSubmitted: allVersions.filter(v=>v.distrokid?.submittedDate?.trim()).length,
     dkLive: allVersions.filter(v=>v.distrokid?.spotifyUrl?.trim()).length,
     checklistReady: allVersions.filter(v=>{
-      const t0=v.takes?.[0]||{};
-      const master=masters.find(m=>m.versions?.some(vv=>vv.id===v.id));
-      const autos=[!!(t0.sunoUrl?.trim()),!!(v.genre&&v.mood&&v.themes?.length>0),!!(master?.lyrics?.trim())];
-      const manuals=[v.releaseChecklist?.listened,v.releaseChecklist?.coverArt,v.releaseChecklist?.audioDownloaded];
-      return [...autos,...manuals].filter(Boolean).length===6;
+      const master=masters.find(m=>(m.versions||[]).some(vv=>vv.id===v.id));
+      return checklistStatus(v, master?.lyrics).allDone;
     }).length,
-  };
-  const filtered = masters.filter(m => {
+  }), [masters, allVersions, allTakes, personas]);
+  const filtered = useMemo(() => masters.filter(m => {
     const q = searchQ.toLowerCase();
     const mQ = !q || m.title?.toLowerCase().includes(q) || m.notes?.toLowerCase().includes(q) ||
       m.lyrics?.toLowerCase().includes(q) ||
@@ -663,7 +709,7 @@ export default function App() {
     const mS = filterStatus==='all'  || (m.versions||[]).some(v=>(v.takes||[]).some(t=>t.releaseStatus===filterStatus));
     const mSt= filterStage==='all'   || (m.versions||[]).some(v=>(v.takes||[]).some(t=>t.stage===filterStage));
     return mQ && mP && mS && mSt;
-  });
+  }), [masters, personas, searchQ, filterPersona, filterStatus, filterStage]);
 
   // ── RENDER ────────────────────────────────────────────────────────────────────
   return (
@@ -931,9 +977,13 @@ export default function App() {
                         <input type="color" value={newPersonaForm.color} onChange={e=>setNewPersonaForm(p=>({...p,color:e.target.value}))}
                           style={{ width:44, height:40, border:'1px solid #333', borderRadius:4, background:'#111', cursor:'pointer', padding:2 }} />
                       </div>
-                      <input value={newPersonaForm.desc} onChange={e=>setNewPersonaForm(p=>({...p,desc:e.target.value}))}
-                        placeholder="Style description — used by AI for routing"
+                      <input value={newPersonaForm.genre} onChange={e=>setNewPersonaForm(p=>({...p,genre:e.target.value}))}
+                        placeholder="Genre (e.g. Soul / R&B). Leave blank to auto-derive from description."
                         style={{ background:'#0d0d0d', border:'1px solid #1e1e1e', borderRadius:4, color:'#e8dcc8', padding:'9px 12px', fontSize:12, outline:'none', width:'100%' }} />
+                      <textarea value={newPersonaForm.desc} onChange={e=>setNewPersonaForm(p=>({...p,desc:e.target.value}))}
+                        placeholder="Style description — used by AI for routing"
+                        rows={3}
+                        style={{ background:'#0d0d0d', border:'1px solid #1e1e1e', borderRadius:4, color:'#e8dcc8', padding:'9px 12px', fontSize:12, outline:'none', width:'100%', resize:'vertical', lineHeight:1.6, fontFamily:'inherit' }} />
                       <button onClick={handleAddPersona} disabled={!newPersonaForm.name.trim()}
                         style={{ background:newPersonaForm.name.trim()?'linear-gradient(135deg,#C8942A,#9a7018)':'#141414', border:'none', borderRadius:4,
                                  color:newPersonaForm.name.trim()?'#fff':'#777', padding:'10px 0', fontSize:12, letterSpacing:'0.15em', textTransform:'uppercase', cursor:'pointer' }}>

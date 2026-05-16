@@ -11,8 +11,20 @@ export function downloadCSV(blob, filename) {
 }
 
 export function openPDF(html) {
-  const win = window.open('','_blank'); win.document.write(html); win.document.close();
-  setTimeout(()=>win.print(), 500);
+  const win = window.open('', '_blank');
+  if (!win) {
+    // Popup blocked — fall back to downloading the HTML so it isn't lost
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'the-message-export.html';
+    a.click();
+    alert('Your browser blocked the print preview pop-up. The export was downloaded as an HTML file you can open in any browser and print from there.');
+    return;
+  }
+  win.document.write(html);
+  win.document.close();
+  setTimeout(() => { try { win.print(); } catch (_) {} }, 500);
 }
 
 export function pdfShell(title, subtitle, description, body, masters, personas) {
@@ -48,19 +60,24 @@ export function pdfShell(title, subtitle, description, body, masters, personas) 
 </div>${body}</body></html>`;
 }
 
+// Helper: a take is releasable if marked ready/released
+const isReleasable = t => t.releaseStatus==='ready'||t.releaseStatus==='released';
+const versionsOf = m => m.versions || [];
+const takesOf = v => v.takes || [];
+
 // ── 1. Music Supervisor Export ─────────────────────────────────────────
 export function exportSupervisorCSV(masters, personas) {
   const eligible = masters
-    .filter(m => m.versions.some(v => v.takes.some(t => t.releaseStatus==='ready'||t.releaseStatus==='released')))
+    .filter(m => versionsOf(m).some(v => takesOf(v).some(isReleasable)))
     .sort((a,b) => {
-      const va = a.versions.find(v=>v.takes.some(t=>t.releaseStatus==='ready'||t.releaseStatus==='released'))||a.versions[0];
-      const vb = b.versions.find(v=>v.takes.some(t=>t.releaseStatus==='ready'||t.releaseStatus==='released'))||b.versions[0];
+      const va = versionsOf(a).find(v=>takesOf(v).some(isReleasable))||versionsOf(a)[0];
+      const vb = versionsOf(b).find(v=>takesOf(v).some(isReleasable))||versionsOf(b)[0];
       return (va?.mood||'').localeCompare(vb?.mood||'') || (va?.genre||'').localeCompare(vb?.genre||'') || a.title.localeCompare(b.title);
     });
   const rows = [['Title','Persona','Genre','Mood','Instrumental Mood','Themes','Duration','BPM','Key','Sync Available','Listen Link','Status']];
   eligible.forEach(m => {
-    m.versions.filter(v=>v.takes.some(t=>t.releaseStatus==='ready'||t.releaseStatus==='released')).forEach(v => {
-      const take = v.takes.find(t=>t.isPrimary)||v.takes[0];
+    versionsOf(m).filter(v=>takesOf(v).some(isReleasable)).forEach(v => {
+      const take = takesOf(v).find(t=>t.isPrimary)||takesOf(v)[0];
       const p = getP(v.persona, personas);
       rows.push([m.title, p.name, v.genre||'', v.mood||'', v.instrumentalMood||'',
         (v.themes||[]).join(', '), v.duration||'', v.bpm||'', v.musicalKey||'',
@@ -73,15 +90,15 @@ export function exportSupervisorCSV(masters, personas) {
 
 export function exportSupervisorPDF(masters, personas) {
   const eligible = masters
-    .filter(m => m.versions.some(v => v.takes.some(t => t.releaseStatus==='ready'||t.releaseStatus==='released')))
+    .filter(m => versionsOf(m).some(v => takesOf(v).some(isReleasable)))
     .sort((a,b) => {
-      const va = a.versions.find(v=>v.takes.some(t=>t.releaseStatus==='ready'||t.releaseStatus==='released'))||a.versions[0];
-      const vb = b.versions.find(v=>v.takes.some(t=>t.releaseStatus==='ready'||t.releaseStatus==='released'))||b.versions[0];
+      const va = versionsOf(a).find(v=>takesOf(v).some(isReleasable))||versionsOf(a)[0];
+      const vb = versionsOf(b).find(v=>takesOf(v).some(isReleasable))||versionsOf(b)[0];
       return (va?.mood||'').localeCompare(vb?.mood||'') || a.title.localeCompare(b.title);
     });
   const byMood = {};
   eligible.forEach(m => {
-    m.versions.filter(v=>v.takes.some(t=>t.releaseStatus==='ready'||t.releaseStatus==='released')).forEach(v => {
+    versionsOf(m).filter(v=>takesOf(v).some(isReleasable)).forEach(v => {
       const mood = v.mood||'Unspecified';
       if (!byMood[mood]) byMood[mood] = [];
       byMood[mood].push({m, v});
@@ -92,7 +109,7 @@ export function exportSupervisorPDF(masters, personas) {
     const items = byMood[mood];
     body += `<div class="section"><div class="sec-title">${mood} <span class="sec-count">${items.length} song${items.length!==1?'s':''}</span></div>`;
     items.forEach(({m, v}) => {
-      const take = v.takes.find(t=>t.isPrimary)||v.takes[0];
+      const take = takesOf(v).find(t=>t.isPrimary)||takesOf(v)[0];
       const p = getP(v.persona, personas);
       const tech = [v.bpm?`${v.bpm} BPM`:'', v.musicalKey||'', v.duration||'', v.instrumentalMood||''].filter(Boolean).join(' · ');
       const sync = v.syncAvailable ? ` · Sync: ${v.syncAvailable}` : '';
@@ -122,12 +139,12 @@ ${take?.sunoUrl?`<div class="song-link">Listen: <a href="${take.sunoUrl}">${take
 export function exportLabelCSV(masters, personas) {
   const rows = [['Title','Persona / Artist','Genre','Mood','Themes','Version Summary','Release Status','Suno Created','Listen Link']];
   personas.forEach(p => {
-    const songs = [...masters].filter(m=>m.versions.some(v=>v.persona===p.id)).sort((a,b)=>a.title.localeCompare(b.title));
+    const songs = [...masters].filter(m=>versionsOf(m).some(v=>v.persona===p.id)).sort((a,b)=>a.title.localeCompare(b.title));
     if (!songs.length) return;
     rows.push([`--- ${p.name} (${songs.length} songs) ---`,'','','','','','','','']);
     songs.forEach(m => {
-      m.versions.filter(v=>v.persona===p.id).forEach(v => {
-        const take = v.takes.find(t=>t.isPrimary)||v.takes[0];
+      versionsOf(m).filter(v=>v.persona===p.id).forEach(v => {
+        const take = takesOf(v).find(t=>t.isPrimary)||takesOf(v)[0];
         const createdAt = take?.sunoCreatedAt ? take.sunoCreatedAt.slice(0,10) : '';
         rows.push([m.title, p.name, v.genre||'', v.mood||'', (v.themes||[]).join(', '), v.versionSummary||'', take?.releaseStatus||'draft', createdAt, take?.sunoUrl||'']);
       });
@@ -141,13 +158,13 @@ export function exportLabelCSV(masters, personas) {
 export function exportLabelPDF(masters, personas) {
   let body = '';
   personas.forEach(p => {
-    const songs = [...masters].filter(m=>m.versions.some(v=>v.persona===p.id)).sort((a,b)=>a.title.localeCompare(b.title));
+    const songs = [...masters].filter(m=>versionsOf(m).some(v=>v.persona===p.id)).sort((a,b)=>a.title.localeCompare(b.title));
     if (!songs.length) return;
     body += `<div class="section"><div class="sec-title" style="border-color:${p.color}44;color:${p.color}">${p.name} <span class="sec-count" style="color:${p.color}88">${songs.length} songs</span></div>`;
     if (p.desc) body += `<div style="font-size:11px;color:#888;font-style:italic;margin-bottom:18px">${p.desc}</div>`;
     songs.forEach(m => {
-      m.versions.filter(v=>v.persona===p.id).forEach(v => {
-        const take = v.takes.find(t=>t.isPrimary)||v.takes[0];
+      versionsOf(m).filter(v=>v.persona===p.id).forEach(v => {
+        const take = takesOf(v).find(t=>t.isPrimary)||takesOf(v)[0];
         const status = take?.releaseStatus||'draft';
         const statusColor = status==='released'?'#22c55e':status==='ready'?'#f59e0b':'#888';
         body += `<div class="song">
@@ -178,8 +195,8 @@ export function exportPublisherCSV(masters, personas) {
   const sorted = [...masters].sort((a,b)=>a.title.localeCompare(b.title));
   const rows = [['Title','Persona / Artist','Genre','Themes','PRO Status','ISRC','Listen Link']];
   sorted.forEach(m => {
-    m.versions.forEach(v => {
-      const take = v.takes.find(t=>t.isPrimary)||v.takes[0];
+    versionsOf(m).forEach(v => {
+      const take = takesOf(v).find(t=>t.isPrimary)||takesOf(v)[0];
       const p = getP(v.persona, personas);
       rows.push([m.title, p.name, v.genre||'', (v.themes||[]).join(', '), v.proStatus||'', take?.isrc||'', take?.sunoUrl||'']);
     });
@@ -192,8 +209,8 @@ export function exportPublisherPDF(masters, personas) {
   const sorted = [...masters].sort((a,b)=>a.title.localeCompare(b.title));
   let body = `<div class="section"><div class="sec-title">All Songs — Alphabetical <span class="sec-count">${sorted.length} songs</span></div>`;
   sorted.forEach(m => {
-    m.versions.forEach(v => {
-      const take = v.takes.find(t=>t.isPrimary)||v.takes[0];
+    versionsOf(m).forEach(v => {
+      const take = takesOf(v).find(t=>t.isPrimary)||takesOf(v)[0];
       const p = getP(v.persona, personas);
       const rights = [v.proStatus?`PRO: ${v.proStatus}`:'', take?.isrc?`ISRC: ${take.isrc}`:''].filter(Boolean).join(' · ');
       body += `<div class="song">
@@ -218,18 +235,20 @@ ${take?.sunoUrl?`<div class="song-link">Listen: <a href="${take.sunoUrl}">${take
 }
 
 // ── 4. Playlist Curator Export ─────────────────────────────────────────
+const isReleased = t => t.releaseStatus==='released';
+
 export function exportCuratorCSV(masters, personas) {
   const released = [...masters]
-    .filter(m => m.versions.some(v => v.takes.some(t => t.releaseStatus==='released')))
+    .filter(m => versionsOf(m).some(v => takesOf(v).some(isReleased)))
     .sort((a,b) => {
-      const va = a.versions.find(v=>v.takes.some(t=>t.releaseStatus==='released'))||a.versions[0];
-      const vb = b.versions.find(v=>v.takes.some(t=>t.releaseStatus==='released'))||b.versions[0];
+      const va = versionsOf(a).find(v=>takesOf(v).some(isReleased))||versionsOf(a)[0];
+      const vb = versionsOf(b).find(v=>takesOf(v).some(isReleased))||versionsOf(b)[0];
       return (va?.targetAudience||'').localeCompare(vb?.targetAudience||'') || (va?.mood||'').localeCompare(vb?.mood||'') || a.title.localeCompare(b.title);
     });
   const rows = [['Title','Persona / Artist','Genre','Mood','Target Audience','Duration','Runtime','Listen Link']];
   released.forEach(m => {
-    m.versions.filter(v=>v.takes.some(t=>t.releaseStatus==='released')).forEach(v => {
-      const take = v.takes.find(t=>t.isPrimary)||v.takes[0];
+    versionsOf(m).filter(v=>takesOf(v).some(isReleased)).forEach(v => {
+      const take = takesOf(v).find(t=>t.isPrimary)||takesOf(v)[0];
       const p = getP(v.persona, personas);
       rows.push([m.title, p.name, v.genre||'', v.mood||'', v.targetAudience||'General', v.duration||'', v.runtime||'', take?.sunoUrl||'']);
     });
@@ -240,15 +259,15 @@ export function exportCuratorCSV(masters, personas) {
 
 export function exportCuratorPDF(masters, personas) {
   const released = [...masters]
-    .filter(m => m.versions.some(v => v.takes.some(t => t.releaseStatus==='released')))
+    .filter(m => versionsOf(m).some(v => takesOf(v).some(isReleased)))
     .sort((a,b) => {
-      const va = a.versions.find(v=>v.takes.some(t=>t.releaseStatus==='released'))||a.versions[0];
-      const vb = b.versions.find(v=>v.takes.some(t=>t.releaseStatus==='released'))||b.versions[0];
+      const va = versionsOf(a).find(v=>takesOf(v).some(isReleased))||versionsOf(a)[0];
+      const vb = versionsOf(b).find(v=>takesOf(v).some(isReleased))||versionsOf(b)[0];
       return (va?.targetAudience||'').localeCompare(vb?.targetAudience||'') || (va?.mood||'').localeCompare(vb?.mood||'') || a.title.localeCompare(b.title);
     });
   const byAudience = {};
   released.forEach(m => {
-    m.versions.filter(v=>v.takes.some(t=>t.releaseStatus==='released')).forEach(v => {
+    versionsOf(m).filter(v=>takesOf(v).some(isReleased)).forEach(v => {
       const aud = v.targetAudience||'General';
       if (!byAudience[aud]) byAudience[aud] = [];
       byAudience[aud].push({m, v});
@@ -259,7 +278,7 @@ export function exportCuratorPDF(masters, personas) {
     const items = byAudience[aud];
     body += `<div class="section"><div class="sec-title">${aud} <span class="sec-count">${items.length} song${items.length!==1?'s':''}</span></div>`;
     items.forEach(({m, v}) => {
-      const take = v.takes.find(t=>t.isPrimary)||v.takes[0];
+      const take = takesOf(v).find(t=>t.isPrimary)||takesOf(v)[0];
       const p = getP(v.persona, personas);
       const meta2 = [v.mood||'', v.genre||'', v.runtime||v.duration||''].filter(Boolean).join(' · ');
       body += `<div class="song">
@@ -314,10 +333,10 @@ export function exportLyricsCSV(masters, personas) {
   let rowCount = 0;
   withLyrics.forEach(m => {
     const cleanLyrics = sanitizeLyrics(m.lyrics);
-    m.versions.forEach(v => {
+    versionsOf(m).forEach(v => {
       const p = getP(v.persona, personas);
       if (!p || !p.name) return;
-      const take = v.takes?.find(t=>t.isPrimary) || v.takes?.[0];
+      const take = takesOf(v).find(t=>t.isPrimary) || takesOf(v)[0];
       const isrc = take?.isrc || '';
       const duration = v.duration || '';   // expected MM:SS or blank
       rows.push([

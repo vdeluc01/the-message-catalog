@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { getP, fmtDate, effectiveStage, iBase, lBase } from '../utils.js';
+import { getP, fmtDate, effectiveStage, iBase, lBase, checklistStatus } from '../utils.js';
 import { STAGES, RELEASE_STATUSES, PERSONA_COLORS } from '../constants.js';
 import { analyzeWithAI } from '../ai.js';
 import StagePill from './StagePill.jsx';
@@ -136,11 +136,7 @@ function VersionBlock({ version, master, p, isVersionExpanded, onToggleVersion, 
             {version.takes?.[0] && <StagePill take={version.takes.find(t=>t.isPrimary)||version.takes[0]} masterLyrics={master.lyrics} />}
             {version.takes?.[0] && <StatusBadge status={(version.takes.find(t=>t.isPrimary)||version.takes[0]).releaseStatus} />}
             {(() => {
-              const t0 = version.takes?.[0] || {};
-              const autos = [!!(t0.sunoUrl?.trim()), !!(version.genre && version.mood && version.themes?.length > 0), !!(master.lyrics?.trim())];
-              const manuals = [version.releaseChecklist?.listened, version.releaseChecklist?.coverArt, version.releaseChecklist?.audioDownloaded];
-              const done = [...autos, ...manuals].filter(Boolean).length;
-              const all = done === 6;
+              const { doneCount: done, allDone: all } = checklistStatus(version, master.lyrics);
               const dk = version.distrokid || {};
               const isLive = !!(dk.spotifyUrl?.trim());
               const isSubmitted = !!(dk.submittedDate?.trim());
@@ -276,17 +272,7 @@ function VersionBlock({ version, master, p, isVersionExpanded, onToggleVersion, 
               {version.albumNote && <div style={{ fontSize:11, color:'#aaa', fontStyle:'italic', marginBottom:12 }}>📀 {version.albumNote}</div>}
               {/* Release Checklist */}
               {(() => {
-                const t0 = version.takes?.[0] || {};
-                const checks = [
-                  { key:'auto-url',         label:'Suno URL present',       auto:true,  done: !!(t0.sunoUrl?.trim()) },
-                  { key:'auto-meta',        label:'Metadata complete',      auto:true,  done: !!(version.genre && version.mood && version.themes?.length > 0) },
-                  { key:'auto-lyrics',      label:'Lyrics added',           auto:true,  done: !!(master.lyrics?.trim()) },
-                  { key:'listened',         label:'Listened end-to-end',    auto:false, done: !!(version.releaseChecklist?.listened) },
-                  { key:'coverArt',         label:'Cover art ready',        auto:false, done: !!(version.releaseChecklist?.coverArt) },
-                  { key:'audioDownloaded',  label:'Audio file downloaded',  auto:false, done: !!(version.releaseChecklist?.audioDownloaded) },
-                ];
-                const doneCount = checks.filter(c=>c.done).length;
-                const allDone = doneCount === 6;
+                const { items: checks, doneCount, allDone } = checklistStatus(version, master.lyrics);
                 return (
                   <div style={{ marginBottom:14 }}>
                     <div style={{ fontSize:9, letterSpacing:'0.2em', color:'#555', textTransform:'uppercase', marginBottom:7 }}>Release Checklist</div>
@@ -322,10 +308,7 @@ function VersionBlock({ version, master, p, isVersionExpanded, onToggleVersion, 
               })()}
               {/* DistroKid Submission Tracker */}
               {(() => {
-                const t0 = version.takes?.[0] || {};
-                const autos = [!!(t0.sunoUrl?.trim()), !!(version.genre && version.mood && version.themes?.length > 0), !!(master.lyrics?.trim())];
-                const manuals = [version.releaseChecklist?.listened, version.releaseChecklist?.coverArt, version.releaseChecklist?.audioDownloaded];
-                const checklistDone = [...autos, ...manuals].filter(Boolean).length === 6;
+                const { allDone: checklistDone } = checklistStatus(version, master.lyrics);
                 const dk = version.distrokid || {};
                 const isLive = !!(dk.spotifyUrl?.trim());
                 const isSubmitted = !!(dk.submittedDate?.trim());
@@ -550,6 +533,8 @@ export default function MasterRow({ master, personas, apiKey, expanded, onToggle
 
   const topPersonas = [...new Set((master.versions||[]).map(v=>v.persona))].slice(0,3);
   const primaryTakes = (master.versions||[]).map(v=>(v.takes||[]).find(t=>t.isPrimary)||(v.takes||[])[0]).filter(Boolean);
+  // Only takes that actually have a URL to open
+  const listenableTakes = primaryTakes.filter(t => t.sunoUrl && t.sunoUrl.trim());
   const firstPersonaColor = getP((master.versions||[])[0]?.persona||'', personas).color || '#333';
 
   const handleListen = (take) => {
@@ -604,12 +589,12 @@ export default function MasterRow({ master, personas, apiKey, expanded, onToggle
         <div style={{ display:'flex', gap:6, alignItems:'center', flexShrink:0 }}>
           {primaryTakes.slice(0,2).map(t=><StagePill key={t.id} take={t} masterLyrics={master.lyrics} />)}
 
-          {/* Listen button */}
-          {primaryTakes.length > 0 && (
+          {/* Listen button — only shown when at least one take has a Suno URL */}
+          {listenableTakes.length > 0 && (
             <div ref={listenBtnRef} style={{ position:'relative' }}>
               <button
                 onClick={e=>{ e.stopPropagation();
-                  if (primaryTakes.length === 1) { handleListen(primaryTakes[0]); }
+                  if (listenableTakes.length === 1) { handleListen(listenableTakes[0]); }
                   else {
                     if (!pickerOpen) {
                       const rect = listenBtnRef.current.getBoundingClientRect();
@@ -631,7 +616,7 @@ export default function MasterRow({ master, personas, apiKey, expanded, onToggle
                               boxShadow:'0 4px 20px rgba(0,0,0,0.8)', zIndex:1000, minWidth:180, padding:6 }}
                      onMouseDown={e=>e.stopPropagation()} onClick={e=>e.stopPropagation()}>
                   <div style={{ fontSize:9, letterSpacing:'0.15em', color:'#555', textTransform:'uppercase', marginBottom:6, paddingLeft:4 }}>Choose version</div>
-                  {primaryTakes.map(t=>{
+                  {listenableTakes.map(t=>{
                     const ver = (master.versions||[]).find(v=>(v.takes||[]).some(tk=>tk.id===t.id));
                     const pp = getP(ver?.persona||'', personas);
                     return (
