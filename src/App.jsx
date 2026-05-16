@@ -1535,7 +1535,17 @@ export default function App() {
           setExpandedGroups={setExpandedGroups}
         />
       ) : (
-        <Tour setView={setView} setShowSettings={setShowSettings} setSettingsTab={setSettingsTab} />
+        <Tour
+          setView={changeView}
+          setActiveTab={setActiveTab}
+          setShowSettings={setShowSettings}
+          setSettingsTab={setSettingsTab}
+          setWizardStep={setWizardStep}
+          setExpandedMaster={setExpandedMaster}
+          setExpandedVersion={setExpandedVersion}
+          setExpandedGroups={setExpandedGroups}
+          masters={masters}
+        />
       )}
     </div>
   );
