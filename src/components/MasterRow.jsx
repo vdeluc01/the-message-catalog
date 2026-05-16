@@ -112,6 +112,10 @@ function VersionBlock({ version, master, p, isVersionExpanded, onToggleVersion, 
     runtime: version.runtime||'',
     syncAvailable: version.syncAvailable||'',
     proStatus: version.proStatus||'',
+    // ISRC lives on the take object (per-recording). The version edit form
+    // reads from / writes to the PRIMARY take so users have one obvious
+    // place to enter it. Per-take overrides happen in TakeBlock.
+    isrc: (version.takes?.find(t => t.isPrimary) || version.takes?.[0])?.isrc || '',
   });
 
   const [dkOpen, setDkOpen] = useState(false);
@@ -440,7 +444,7 @@ function VersionBlock({ version, master, p, isVersionExpanded, onToggleVersion, 
                     <div><label style={lBase}>Runtime</label>
                       <input value={vEditForm.runtime} onChange={e=>setVEditForm(f=>({...f,runtime:e.target.value}))} placeholder="e.g. 3:24" style={iBase} /></div>
                   </div>
-                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:10 }}>
                     <div><label style={lBase}>Sync Availability</label>
                       <select value={vEditForm.syncAvailable} onChange={e=>setVEditForm(f=>({...f,syncAvailable:e.target.value}))} style={sel}>
                         <option value="">—</option>
@@ -452,19 +456,29 @@ function VersionBlock({ version, master, p, isVersionExpanded, onToggleVersion, 
                         {['Registered','Pending','Not Registered'].map(s=><option key={s} value={s}>{s}</option>)}
                       </select></div>
                   </div>
+                  <div><label style={lBase}>ISRC</label>
+                    <input value={vEditForm.isrc} onChange={e=>setVEditForm(f=>({...f,isrc:e.target.value}))}
+                      placeholder="e.g. USRC12500001 — from DistroKid once the song is registered" style={iBase} />
+                    <div style={{ fontSize:10, color:'#666', marginTop:4, fontStyle:'italic' }}>
+                      Stored on the primary take. Flows into the Publisher and Musixmatch exports.
+                    </div>
+                  </div>
                 </div>
               </div>
               <div style={{ display:'flex', gap:8 }}>
                 <button onClick={()=>setEditingVersion(false)} style={{ background:'transparent', border:'1px solid #222', borderRadius:3, color:'#aaa', padding:'8px 16px', fontSize:11, cursor:'pointer' }}>Cancel</button>
                 <button onClick={()=>{
                   const themes = vEditForm.themes.split(',').map(t=>t.trim()).filter(Boolean);
+                  // Find the primary take's index so we can write stylePrompt + isrc to it
+                  const primaryIdx = Math.max(0, (version.takes||[]).findIndex(t=>t.isPrimary));
+                  const isrc = vEditForm.isrc.trim();
                   onUpdateVersion(master.id, version.id, { label:vEditForm.label, persona:vEditForm.persona,
                     genre:vEditForm.genre, mood:vEditForm.mood, instrumentalMood:vEditForm.instrumentalMood,
                     targetAudience:vEditForm.targetAudience, duration:vEditForm.duration, themes,
                     versionSummary:vEditForm.versionSummary, albumNote:vEditForm.albumNote,
                     bpm:vEditForm.bpm, musicalKey:vEditForm.musicalKey, runtime:vEditForm.runtime,
                     syncAvailable:vEditForm.syncAvailable, proStatus:vEditForm.proStatus,
-                    takes: version.takes.map((t,i)=>i===0?{...t,stylePrompt:vEditForm.stylePrompt}:t) });
+                    takes: version.takes.map((t,i)=>i===primaryIdx?{...t,stylePrompt:vEditForm.stylePrompt,isrc}:t) });
                   setEditingVersion(false);
                 }} style={{ flex:1, background:'linear-gradient(135deg,#C8942A,#9a7018)', border:'none', borderRadius:3, color:'#fff', padding:'8px 0', fontSize:11, letterSpacing:'0.15em', textTransform:'uppercase', cursor:'pointer' }}>
                   ✓ Save Version
