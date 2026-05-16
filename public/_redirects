@@ -1,1 +1,7 @@
-/*  /index.html  200
+# Shareable demo URL — /demo lands the visitor in the click-through tour
+/demo   /index.html?demo=1   200
+/demo/  /index.html?demo=1   200
+
+# SPA fallback — every other route serves index.html so the OAuth callback
+# and any client-side routing keep working.
+/*      /index.html          200

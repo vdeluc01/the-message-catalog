@@ -14,13 +14,20 @@ import {
   exportLyricsCSV
 } from './exports.js';
 import Tour from './Tour.jsx';
+import DemoTour from './DemoTour.jsx';
+import { DEMO_MASTERS } from './demoFixture.js';
 import MasterRow from './components/MasterRow.jsx';
 import AddWizard from './components/AddWizard.jsx';
 import BatchAdd from './components/BatchAdd.jsx';
 
 export default function App() {
+  // Demo mode: ?demo=1 in the URL loads a fixture catalog, skips Google Drive
+  // entirely, and blocks destructive actions so visitors can click through
+  // without breaking anything.
+  const isDemo = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('demo') === '1';
+
   // Core data
-  const [masters, setMasters] = useState([]);
+  const [masters, setMasters] = useState(() => isDemo ? DEMO_MASTERS : []);
   const [personas, setPersonas] = useState(() => {
     try {
       const p = localStorage.getItem(PERSONAS_KEY);
@@ -91,6 +98,7 @@ export default function App() {
   const importRef = useRef();
   const driveAutoSaveTimer = useRef(null);
   const [showOnboarding, setShowOnboarding] = useState(() => {
+    if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('demo') === '1') return false;
     return !localStorage.getItem('tmsg-onboarding-done');
   });
   const dismissOnboarding = () => {
@@ -102,6 +110,7 @@ export default function App() {
 
   // ── Init ──
   useEffect(() => {
+    if (isDemo) return; // Demo mode: fixture is already loaded, no Drive, no OAuth
     const token = getToken();
     if (token) {
       setDriveConnected(true);
@@ -124,6 +133,7 @@ export default function App() {
   // textarea, sliders, etc.) don't serialize the whole catalog on every keystroke.
   // The first effect runs on mount, so initial state is captured immediately.
   useEffect(() => {
+    if (isDemo) return; // Demo mode never writes to localStorage
     const handle = setTimeout(() => {
       try { localStorage.setItem(DATA_KEY, JSON.stringify(masters)); } catch (e) {}
     }, 800);
@@ -132,6 +142,7 @@ export default function App() {
 
   // Auto-save to Google Drive — debounced 4s after any change + every 5 min
   useEffect(() => {
+    if (isDemo) return; // Demo mode: no Drive writes
     if (!driveConnected || masters.length === 0) return;
     if (driveAutoSaveTimer.current) clearTimeout(driveAutoSaveTimer.current);
     driveAutoSaveTimer.current = setTimeout(() => triggerDriveAutoSave(), 4000);
@@ -139,6 +150,7 @@ export default function App() {
   }, [masters, driveConnected]);
 
   useEffect(() => {
+    if (isDemo) return; // Demo mode: no Drive heartbeat
     // 5-minute heartbeat save. Reads latest masters from localStorage at fire time
     // (inside triggerDriveAutoSave), so we intentionally don't depend on `masters` here —
     // otherwise every edit would reset the interval and it would effectively never fire.
@@ -1081,7 +1093,11 @@ export default function App() {
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:16, flexWrap:'wrap' }}>
           {saveStatus && <span style={{ fontSize:12, color:'#34D399' }}>{saveStatus}</span>}
-          {driveConnected ? (
+          {isDemo ? (
+            <span style={{ fontSize:11, color:'#C8942A', background:'#1a1500', border:'1px solid #3a2800', borderRadius:4, padding:'4px 10px', letterSpacing:'0.05em' }}>
+              📽 Demo Mode · fictional data
+            </span>
+          ) : driveConnected ? (
             <span style={{ fontSize:11, color: driveStatus.includes('⚠')?'#C0392B': driveStatus.includes('⟳')?'#C8942A':'#34D399',
                            background:'#0a1a0a', border:`1px solid ${driveStatus.includes('⚠')?'#2a1515': driveStatus.includes('⟳')?'#3a2800':'#1a4a1a'}`,
                            borderRadius:4, padding:'4px 10px', letterSpacing:'0.05em' }}>
@@ -1101,7 +1117,9 @@ export default function App() {
               </div>
             ))}
           </div>
-          <button onClick={()=>{ if(window.startCatalogTour) window.startCatalogTour(); }} style={{ background:'transparent', border:'1px solid #C8942A', borderRadius:4, color:'#C8942A', padding:'8px 16px', fontSize:11, cursor:'pointer', letterSpacing:'0.12em', textTransform:'uppercase', marginRight:8 }}>★ Take Tour</button>
+          {!isDemo && (
+            <button onClick={()=>{ if(window.startCatalogTour) window.startCatalogTour(); }} style={{ background:'transparent', border:'1px solid #C8942A', borderRadius:4, color:'#C8942A', padding:'8px 16px', fontSize:11, cursor:'pointer', letterSpacing:'0.12em', textTransform:'uppercase', marginRight:8 }}>★ Take Tour</button>
+          )}
           <button onClick={()=>setShowSettings(true)} style={{ background:'transparent', border:'1px solid #252525', borderRadius:4, color:'#ccc', padding:'8px 16px', fontSize:11, cursor:'pointer', letterSpacing:'0.12em', textTransform:'uppercase' }}>⚙ Settings</button>
         </div>
       </div>
@@ -1496,7 +1514,23 @@ export default function App() {
         />
       )}
 
-      <Tour setView={setView} setShowSettings={setShowSettings} setSettingsTab={setSettingsTab} />
+      {isDemo ? (
+        <DemoTour
+          setView={changeView}
+          setActiveTab={setActiveTab}
+          setShowSettings={setShowSettings}
+          setSettingsTab={setSettingsTab}
+          setWizardStep={setWizardStep}
+          setMasterForm={setMasterForm}
+          setVersionForm={setVersionForm}
+          setPendingAnalysis={setPendingAnalysis}
+          setExpandedMaster={setExpandedMaster}
+          setExpandedVersion={setExpandedVersion}
+          setExpandedGroups={setExpandedGroups}
+        />
+      ) : (
+        <Tour setView={setView} setShowSettings={setShowSettings} setSettingsTab={setSettingsTab} />
+      )}
     </div>
   );
 }
