@@ -21,10 +21,16 @@ import AddWizard from './components/AddWizard.jsx';
 import BatchAdd from './components/BatchAdd.jsx';
 
 export default function App() {
-  // Demo mode: ?demo=1 in the URL loads a fixture catalog, skips Google Drive
-  // entirely, and blocks destructive actions so visitors can click through
-  // without breaking anything.
-  const isDemo = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('demo') === '1';
+  // Demo mode: ?demo=1 or /demo path loads a fixture catalog, skips Google
+  // Drive entirely, and blocks destructive actions so visitors can click
+  // through without breaking anything. Netlify rewrites /demo -> /index.html
+  // with a 200, so the query string isn't visible to the client — we also
+  // sniff the pathname directly.
+  const isDemo = typeof window !== 'undefined' && (
+    new URLSearchParams(window.location.search).get('demo') === '1' ||
+    window.location.pathname === '/demo' ||
+    window.location.pathname === '/demo/'
+  );
 
   // Core data
   const [masters, setMasters] = useState(() => isDemo ? DEMO_MASTERS : []);
@@ -98,7 +104,7 @@ export default function App() {
   const importRef = useRef();
   const driveAutoSaveTimer = useRef(null);
   const [showOnboarding, setShowOnboarding] = useState(() => {
-    if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('demo') === '1') return false;
+    if (isDemo) return false;
     return !localStorage.getItem('tmsg-onboarding-done');
   });
   const dismissOnboarding = () => {
