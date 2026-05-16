@@ -59,24 +59,20 @@ const findTargetButton = (text) => {
   }) || null;
 };
 
-const computeTooltipPos = (rect) => {
+// Position the tooltip in the OPPOSITE vertical half from the spotlight so
+// the bubble never covers what it points at. Caller can pass `flipped` to
+// swap to the same side if the default guess is wrong for their screen.
+const computeTooltipPos = (rect, flipped = false) => {
   const W = 360;
-  const H = 200;
-  const margin = 16;
+  const H = 240;
+  const margin = 18;
   const vw = window.innerWidth;
   const vh = window.innerHeight;
-  const spaceBelow = vh - rect.bottom;
-  const spaceAbove = rect.top;
-  let top, left;
-  if (spaceBelow >= H + margin) {
-    top = rect.bottom + margin;
-  } else if (spaceAbove >= H + margin) {
-    top = rect.top - H - margin;
-  } else {
-    top = Math.max(margin, vh / 2 - H / 2);
-  }
-  left = rect.left + rect.width / 2 - W / 2;
-  left = Math.max(margin, Math.min(left, vw - W - margin));
+  const spotCenterY = rect.top + rect.height / 2;
+  const spotInTopHalf = spotCenterY < vh / 2;
+  const bubbleAtBottom = flipped ? spotInTopHalf : !spotInTopHalf;
+  const top = bubbleAtBottom ? vh - H - margin : margin;
+  const left = Math.max(margin, Math.min((vw - W) / 2, vw - W - margin));
   return { top, left, width: W };
 };
 
@@ -84,6 +80,8 @@ export default function Tour({ setView, setShowSettings, setSettingsTab }) {
   const [active, setActive] = useState(false);
   const [stepIdx, setStepIdx] = useState(0);
   const [targetRect, setTargetRect] = useState(null);
+  const [tipFlipped, setTipFlipped] = useState(false); // user can swap bubble to other side
+  const [tipHidden, setTipHidden] = useState(false);   // user can hide bubble to see UI
   const tickRef = useRef(null);
 
   const start = () => {
@@ -183,11 +181,12 @@ export default function Tour({ setView, setShowSettings, setSettingsTab }) {
     };
   } else {
     const expanded = { top: targetRect.top - pad, left: targetRect.left - pad, width: targetRect.width + pad * 2, height: targetRect.height + pad * 2 };
-    const pos = computeTooltipPos(expanded);
+    const pos = computeTooltipPos(expanded, tipFlipped);
     tipStyle = { top: pos.top, left: pos.left, width: pos.width };
   }
 
-  // Spotlight rect (if any)
+  // Spotlight: gold border + soft amber glow so the target pops without
+  // needing heavy darkness around it.
   const spotStyle = (isModal || !targetRect) ? null : {
     position: 'fixed',
     top: targetRect.top - pad,
@@ -195,21 +194,43 @@ export default function Tour({ setView, setShowSettings, setSettingsTab }) {
     width: targetRect.width + pad * 2,
     height: targetRect.height + pad * 2,
     borderRadius: 8,
-    boxShadow: '0 0 0 9999px rgba(8,10,18,0.78)',
-    border: '2px solid #C8942A',
+    boxShadow: '0 0 0 9999px rgba(8,10,18,0.40), 0 0 30px 4px rgba(200,148,42,0.45) inset, 0 0 24px 2px rgba(200,148,42,0.3)',
+    border: '2px solid #E0A943',
     pointerEvents: 'none',
     zIndex: 99998,
     transition: 'all 220ms ease',
   };
 
-  const dimStyle = (isModal || !targetRect) ? {
-    position: 'fixed', inset: 0, background: 'rgba(8,10,18,0.78)', zIndex: 99997, pointerEvents: 'auto',
-  } : null;
+  // Lighter backdrop on spotlight steps so you can SEE the catalog UI for
+  // context. Full modals still use a heavier dim.
+  const dimStyle = isModal
+    ? { position: 'fixed', inset: 0, background: 'rgba(8,10,18,0.72)', zIndex: 99997, pointerEvents: 'auto' }
+    : (!targetRect
+        ? { position: 'fixed', inset: 0, background: 'rgba(8,10,18,0.40)', zIndex: 99997, pointerEvents: 'auto' }
+        : null);
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 99996, pointerEvents: 'none' }}>
       {dimStyle && <div style={dimStyle} onClick={skip} />}
       {spotStyle && <div style={spotStyle} />}
+
+      {/* "Show explainer" button when bubble is hidden */}
+      {tipHidden && !isModal && targetRect && (
+        <button onClick={() => setTipHidden(false)}
+          style={{
+            position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)',
+            zIndex: 100000, pointerEvents: 'auto',
+            background: 'linear-gradient(135deg,#C8942A,#9a7018)', color: '#fff',
+            border: 'none', borderRadius: 6, padding: '10px 22px', fontSize: 12,
+            fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase',
+            cursor: 'pointer', boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+            fontFamily: 'inherit',
+          }}>
+          Show explainer
+        </button>
+      )}
+
+      {!tipHidden && (
       <div
         role="dialog"
         aria-modal="true"
@@ -218,21 +239,33 @@ export default function Tour({ setView, setShowSettings, setSettingsTab }) {
           ...tipStyle,
           background: 'linear-gradient(180deg, #1c1f2b 0%, #14161e 100%)',
           color: '#f5f5f5',
-          padding: '24px 26px 18px 26px',
+          padding: '22px 24px 18px 26px',
           borderRadius: 12,
           border: '1px solid #2a2d38',
           boxShadow: '0 24px 60px rgba(0,0,0,0.6), 0 0 0 1px rgba(200,148,42,0.15)',
           zIndex: 100000,
           pointerEvents: 'auto',
           fontFamily: 'inherit',
+          maxHeight: '70vh',
+          overflowY: 'auto',
         }}>
+        {/* Top-right controls: flip side, hide bubble */}
+        {!isModal && targetRect && (
+          <div style={{ position: 'absolute', top: 10, right: 12, display: 'flex', gap: 6, zIndex: 1 }}>
+            <button onClick={() => setTipFlipped(f => !f)} title="Move explainer to the other side"
+              style={iconBtn}>↕</button>
+            <button onClick={() => setTipHidden(true)} title="Hide explainer momentarily"
+              style={iconBtn}>👁</button>
+          </div>
+        )}
+
         {step.icon && (
           <div style={{ fontSize: 32, marginBottom: 8 }}>{step.icon}</div>
         )}
         {step.pre && (
-          <div style={{ fontSize: 10, letterSpacing: '0.3em', color: '#C8942A', textTransform: 'uppercase', marginBottom: 8 }}>{step.pre}</div>
+          <div style={{ fontSize: 10, letterSpacing: '0.3em', color: '#C8942A', textTransform: 'uppercase', marginBottom: 8, paddingRight: 60 }}>{step.pre}</div>
         )}
-        <div style={{ fontSize: 18, fontWeight: 700, lineHeight: 1.3, marginBottom: 10 }}>{step.title}</div>
+        <div style={{ fontSize: 18, fontWeight: 700, lineHeight: 1.3, marginBottom: 10, paddingRight: 60 }}>{step.title}</div>
         <div style={{ fontSize: 13.5, lineHeight: 1.55, color: '#cfd1d8', marginBottom: 18 }}>{step.body}</div>
 
         {/* Progress dots */}
@@ -258,13 +291,30 @@ export default function Tour({ setView, setShowSettings, setSettingsTab }) {
           </div>
         </div>
 
-        <div style={{ position: 'absolute', top: 12, right: 14, fontSize: 11, color: '#666' }}>
+        <div style={{ position: 'absolute', bottom: 14, left: 26, fontSize: 11, color: '#666' }}>
           {stepIdx + 1} / {total}
         </div>
       </div>
+      )}
     </div>
   );
 }
+
+const iconBtn = {
+  background: 'rgba(255,255,255,0.05)',
+  color: '#888',
+  border: '1px solid #2a2d38',
+  borderRadius: 4,
+  width: 26,
+  height: 26,
+  padding: 0,
+  fontSize: 12,
+  cursor: 'pointer',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  fontFamily: 'inherit',
+};
 
 const btnStylePrimary = {
   background: '#C8942A',
