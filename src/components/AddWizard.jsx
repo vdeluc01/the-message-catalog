@@ -58,7 +58,7 @@ export default function AddWizard({ personas, masterForm, setMasterForm, version
           </div>
           <div style={{ marginBottom:14 }}>
             <label style={lBase}>Suno Creation Date</label>
-            <input value={versionForm.sunoCreatedAt} onChange={e=>setVersionForm(f=>({...f,sunoCreatedAt:e.target.value}))} style={iBase} placeholder="YYYY-MM-DD (copy from Suno dashboard)" />
+            <input type="date" value={(versionForm.sunoCreatedAt||'').slice(0,10)} onChange={e=>setVersionForm(f=>({...f,sunoCreatedAt:e.target.value}))} style={iBase} />
           </div>
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:20 }}>
             <div><label style={lBase}>Production Stage</label>
