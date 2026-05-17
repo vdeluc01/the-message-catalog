@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { computeAnchoredTooltip, flipSide, arrowStyleFor, ensurePulseKeyframes } from './tourPositioning.js';
 
 // ── Demo Tour ──────────────────────────────────────────────────────────────
 // A guided click-through that walks a recipient through what the catalog
@@ -228,30 +229,7 @@ const findTarget = (text) => {
   return hit || null;
 };
 
-// Position the tooltip in the OPPOSITE vertical half from the spotlight so
-// the bubble never covers what it's pointing at. Horizontally centered.
-// Caller can flip top/bottom via the `flipped` flag if their preference is
-// different from our default.
-const computeTipPos = (rect, flipped = false) => {
-  const W = 360;
-  const H = 240;
-  const margin = 18;
-  const vw = window.innerWidth;
-  const vh = window.innerHeight;
-
-  const spotCenterY = rect.top + rect.height / 2;
-  const spotInTopHalf = spotCenterY < vh / 2;
-  // Default: bubble opposite spotlight. If flipped, bubble on same side.
-  const bubbleAtBottom = flipped ? spotInTopHalf : !spotInTopHalf;
-
-  // Bubble at bottom = anchor near bottom; at top = anchor near top
-  const top = bubbleAtBottom
-    ? vh - H - margin
-    : margin;
-
-  const left = Math.max(margin, Math.min((vw - W) / 2, vw - W - margin));
-  return { top, left, width: W };
-};
+// Tooltip positioning lives in tourPositioning.js — shared with Tour.jsx.
 
 export default function DemoTour({
   setView, setActiveTab, setShowSettings, setSettingsTab,
@@ -260,8 +238,11 @@ export default function DemoTour({
 }) {
   const [stepIdx, setStepIdx] = useState(0);
   const [targetRect, setTargetRect] = useState(null);
-  const [tipFlipped, setTipFlipped] = useState(false); // user can flip bubble to other side
-  const [tipHidden, setTipHidden] = useState(false);   // user can momentarily hide bubble
+  const [forcedSide, setForcedSide] = useState(null); // null = auto-pick best side
+  const [tipHidden, setTipHidden] = useState(false);  // user can momentarily hide bubble
+
+  useEffect(() => { ensurePulseKeyframes(); }, []);
+  useEffect(() => { setForcedSide(null); }, [stepIdx]);
 
   const step = STEPS[stepIdx];
   const total = STEPS.length;
@@ -428,12 +409,14 @@ export default function DemoTour({
 
   // Tooltip position
   let tipStyle;
+  let arrow = null;
   if (isModal || !targetRect) {
     tipStyle = { top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: 520 };
   } else {
-    const expanded = { top: targetRect.top - pad, left: targetRect.left - pad, width: targetRect.width + pad * 2, height: targetRect.height + pad * 2, bottom: targetRect.bottom + pad, right: targetRect.right + pad };
-    const pos = computeTipPos(expanded, tipFlipped);
+    const expanded = { top: targetRect.top - pad, left: targetRect.left - pad, width: targetRect.width + pad * 2, height: targetRect.height + pad * 2 };
+    const pos = computeAnchoredTooltip(expanded, forcedSide);
     tipStyle = { top: pos.top, left: pos.left, width: pos.width };
+    arrow = pos.arrow;
   }
 
   // Lighter backdrop on spotlight steps so visitors can SEE the surrounding
@@ -444,8 +427,8 @@ export default function DemoTour({
         ? { position: 'fixed', inset: 0, background: 'rgba(8,10,18,0.40)', zIndex: 99997, pointerEvents: 'auto' }
         : null);
 
-  // Spotlight: gold border + a soft amber glow that BRIGHTENS the target,
-  // plus a much lighter outside dim than before (was 0.78, now 0.40).
+  // Spotlight: brighter gold ring with a pulsing amber halo so the target
+  // pops against the dimmed surroundings. Pulse keyframe is in tourPositioning.
   const spot = (isModal || !targetRect) ? null : {
     position: 'fixed',
     top: targetRect.top - pad,
@@ -453,11 +436,11 @@ export default function DemoTour({
     width: targetRect.width + pad * 2,
     height: targetRect.height + pad * 2,
     borderRadius: 8,
-    boxShadow: '0 0 0 9999px rgba(8,10,18,0.40), 0 0 30px 4px rgba(200,148,42,0.45) inset, 0 0 24px 2px rgba(200,148,42,0.3)',
-    border: '2px solid #E0A943',
+    border: '2px solid #F2C572',
     pointerEvents: 'none',
     zIndex: 99998,
-    transition: 'all 240ms ease',
+    animation: 'tourSpotlightPulse 1.8s ease-in-out infinite',
+    transition: 'top 240ms ease, left 240ms ease, width 240ms ease, height 240ms ease',
   };
 
   const cta = step.cta || (stepIdx === total - 1 ? 'Restart Tour' : 'Next →');
@@ -513,10 +496,15 @@ export default function DemoTour({
             overflowY: 'auto',
           }}
         >
+          {/* Arrow pointing back at the spotlight */}
+          {!isModal && targetRect && arrow && (
+            <div style={arrowStyleFor(arrow)} />
+          )}
+
           {/* Top-right controls: flip position, hide bubble */}
           {!isModal && targetRect && (
             <div style={{ position: 'absolute', top: 10, right: 12, display: 'flex', gap: 6, zIndex: 1 }}>
-              <button onClick={() => setTipFlipped(f => !f)} title="Move explainer to the other side"
+              <button onClick={() => setForcedSide(s => flipSide(s || (arrow && arrow.side) || 'right'))} title="Move explainer to the other side"
                 style={iconBtn}>↕</button>
               <button onClick={() => setTipHidden(true)} title="Hide explainer for a moment"
                 style={iconBtn}>👁</button>

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { THEMES } from './constants.js';
+import { computeAnchoredTooltip, flipSide, arrowStyleFor, ensurePulseKeyframes } from './tourPositioning.js';
 
 // ── Catalog App Guided Tour ───────────────────────────────────────────────
 // 16-step walkthrough that mirrors the /demo experience but runs against
@@ -220,21 +221,7 @@ const findTarget = (text) => {
   return hit || null;
 };
 
-// Position the bubble in the OPPOSITE vertical half from the spotlight so
-// it never covers what it's explaining. Flip toggles to the same half.
-const computeTooltipPos = (rect, flipped = false) => {
-  const W = 360;
-  const H = 240;
-  const margin = 18;
-  const vw = window.innerWidth;
-  const vh = window.innerHeight;
-  const spotCenterY = rect.top + rect.height / 2;
-  const spotInTopHalf = spotCenterY < vh / 2;
-  const bubbleAtBottom = flipped ? spotInTopHalf : !spotInTopHalf;
-  const top = bubbleAtBottom ? vh - H - margin : margin;
-  const left = Math.max(margin, Math.min((vw - W) / 2, vw - W - margin));
-  return { top, left, width: W };
-};
+// Tooltip positioning lives in tourPositioning.js — shared with DemoTour.
 
 export default function Tour({
   setView, setActiveTab, setShowSettings, setSettingsTab,
@@ -244,8 +231,14 @@ export default function Tour({
   const [active, setActive] = useState(false);
   const [stepIdx, setStepIdx] = useState(0);
   const [targetRect, setTargetRect] = useState(null);
-  const [tipFlipped, setTipFlipped] = useState(false);
+  const [forcedSide, setForcedSide] = useState(null); // null = auto-pick best side
   const [tipHidden, setTipHidden] = useState(false);
+
+  // Inject pulse keyframes once.
+  useEffect(() => { ensurePulseKeyframes(); }, []);
+
+  // Reset forced side when step changes so each step starts on its auto-pick.
+  useEffect(() => { setForcedSide(null); }, [stepIdx]);
 
   const start = () => {
     setStepIdx(0);
@@ -424,12 +417,14 @@ export default function Tour({
   const pad = 10;
 
   let tipStyle;
+  let arrow = null;
   if (isModal || !targetRect) {
     tipStyle = { top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: 460 };
   } else {
     const expanded = { top: targetRect.top - pad, left: targetRect.left - pad, width: targetRect.width + pad * 2, height: targetRect.height + pad * 2 };
-    const pos = computeTooltipPos(expanded, tipFlipped);
+    const pos = computeAnchoredTooltip(expanded, forcedSide);
     tipStyle = { top: pos.top, left: pos.left, width: pos.width };
+    arrow = pos.arrow;
   }
 
   const spotStyle = (isModal || !targetRect) ? null : {
@@ -439,11 +434,11 @@ export default function Tour({
     width: targetRect.width + pad * 2,
     height: targetRect.height + pad * 2,
     borderRadius: 8,
-    boxShadow: '0 0 0 9999px rgba(8,10,18,0.40), 0 0 30px 4px rgba(200,148,42,0.45) inset, 0 0 24px 2px rgba(200,148,42,0.3)',
-    border: '2px solid #E0A943',
+    border: '2px solid #F2C572',
     pointerEvents: 'none',
     zIndex: 99998,
-    transition: 'all 220ms ease',
+    animation: 'tourSpotlightPulse 1.8s ease-in-out infinite',
+    transition: 'top 220ms ease, left 220ms ease, width 220ms ease, height 220ms ease',
   };
 
   const dimStyle = isModal
@@ -489,9 +484,13 @@ export default function Tour({
             maxHeight: '70vh',
             overflowY: 'auto',
           }}>
+          {!isModal && targetRect && arrow && (
+            <div style={arrowStyleFor(arrow)} />
+          )}
+
           {!isModal && targetRect && (
             <div style={{ position: 'absolute', top: 10, right: 12, display: 'flex', gap: 6, zIndex: 1 }}>
-              <button onClick={() => setTipFlipped(f => !f)} title="Move explainer to the other side" style={iconBtn}>↕</button>
+              <button onClick={() => setForcedSide(s => flipSide(s || (arrow && arrow.side) || 'right'))} title="Move explainer to the other side" style={iconBtn}>↕</button>
               <button onClick={() => setTipHidden(true)} title="Hide explainer momentarily" style={iconBtn}>👁</button>
             </div>
           )}
