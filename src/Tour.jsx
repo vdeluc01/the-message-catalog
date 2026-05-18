@@ -441,11 +441,13 @@ export default function Tour({
     transition: 'top 220ms ease, left 220ms ease, width 220ms ease, height 220ms ease',
   };
 
+  // Only dim for full-screen modal steps. Spotlight steps rely on the gold
+  // ring; dimming the rest of the app made it impossible to actually use the
+  // catalog while a spotlight was active — and if the spotlight couldn't find
+  // its anchor, the old code rendered a 40% veil with nothing highlighted.
   const dimStyle = isModal
     ? { position: 'fixed', inset: 0, background: 'rgba(8,10,18,0.72)', zIndex: 99997, pointerEvents: 'auto' }
-    : (!targetRect
-        ? { position: 'fixed', inset: 0, background: 'rgba(8,10,18,0.40)', zIndex: 99997, pointerEvents: 'auto' }
-        : null);
+    : null;
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 99996, pointerEvents: 'none' }}>

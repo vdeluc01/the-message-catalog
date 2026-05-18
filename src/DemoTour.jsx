@@ -419,13 +419,15 @@ export default function DemoTour({
     arrow = pos.arrow;
   }
 
-  // Lighter backdrop on spotlight steps so visitors can SEE the surrounding
-  // UI for context. Full modals still use a heavier dim.
+  // Backdrop dim — only used for full-screen modal steps (welcome, finale).
+  // Spotlight steps never dim: the gold ring is the highlight, and dimming
+  // the rest of the app made it hard to navigate the demo as a real catalog.
+  // (Previously, a spotlight that couldn't find its anchor fell back to a
+  // 40% veil with no spotlight, which left the app dark with nothing
+  // highlighted — fixed.)
   const dim = isModal
     ? { position: 'fixed', inset: 0, background: 'rgba(8,10,18,0.72)', zIndex: 99997, pointerEvents: 'auto' }
-    : (!targetRect
-        ? { position: 'fixed', inset: 0, background: 'rgba(8,10,18,0.40)', zIndex: 99997, pointerEvents: 'auto' }
-        : null);
+    : null;
 
   // Spotlight: brighter gold ring with a pulsing amber halo so the target
   // pops against the dimmed surroundings. Pulse keyframe is in tourPositioning.
