@@ -365,3 +365,77 @@ export function exportLyricsCSV(masters, personas) {
   const skipped = masters.length - withLyrics.length;
   return `✓ Lyrics CSV exported — ${rowCount} rows from ${withLyrics.length} songs${skipped?` (${skipped} masters skipped: no lyrics)`:''}`;
 }
+
+// ── 6. EP Tracklist Export ─────────────────────────────────────────────
+// One PDF page per EP: name, persona, release date, UPC, status, links,
+// then the ordered tracklist with per-track ISRCs. Useful as a reference
+// when submitting to DistroKid and registering tracks with the PRO.
+export function exportEpTracklistPDF(eps, masters, personas) {
+  if (!eps || eps.length === 0) {
+    alert('No EPs yet. Create an EP from the EPs view first.');
+    return '⚠ No EPs to export';
+  }
+  const sorted = [...eps].sort((a,b)=>{
+    const ad = a.releaseDate || '9999';
+    const bd = b.releaseDate || '9999';
+    return ad.localeCompare(bd) || (a.name||'').localeCompare(b.name||'');
+  });
+  const sections = sorted.map(ep => {
+    const p = getP(ep.persona, personas);
+    const tracks = (ep.tracks||[]).slice().sort((a,b)=>(a.trackNumber||0)-(b.trackNumber||0));
+    const rows = tracks.map(tr => {
+      const m = masters.find(x=>x.id===tr.masterId);
+      const v = m?.versions?.find(vv=>vv.id===tr.versionId);
+      const vp = getP(v?.persona||'', personas);
+      const title = m?.title || '(missing song)';
+      const versionLabel = v?.label || '';
+      const runtime = v?.runtime || '';
+      const isrc = tr.isrc || '<span style="color:#c45">ISRC missing</span>';
+      return `<tr>
+        <td style="padding:6px 10px;border-bottom:1px solid #eee;font-size:12px;width:36px;text-align:right;color:#666">${tr.trackNumber||''}</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #eee;font-size:12px"><strong>${title}</strong>${versionLabel?` <span style="color:#888">— ${versionLabel}</span>`:''}<div style="font-size:10px;color:${vp.color};letter-spacing:0.05em">${vp.name}</div></td>
+        <td style="padding:6px 10px;border-bottom:1px solid #eee;font-size:11px;color:#666;width:60px">${runtime}</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #eee;font-size:11px;font-family:ui-monospace,Menlo,monospace;width:140px">${isrc}</td>
+      </tr>`;
+    }).join('');
+    const links = [
+      ep.hyperFollowUrl ? `<a href="${ep.hyperFollowUrl}">HyperFollow</a>` : '',
+      ep.spotifyUrl     ? `<a href="${ep.spotifyUrl}">Spotify</a>` : '',
+      ep.appleMusicUrl  ? `<a href="${ep.appleMusicUrl}">Apple Music</a>` : '',
+    ].filter(Boolean).join(' &nbsp;·&nbsp; ');
+    return `<div class="section">
+      <div class="sec-title">${ep.name} <span class="sec-count">${tracks.length} track${tracks.length!==1?'s':''}</span></div>
+      <div style="margin-bottom:14px">
+        <div style="font-size:13px;color:${p.color};letter-spacing:0.08em;margin-bottom:4px">${p.name}</div>
+        <div style="font-size:11px;color:#666;line-height:1.7">
+          ${ep.releaseDate ? `Release date: <strong>${ep.releaseDate}</strong>` : 'Release date: <em>not set</em>'}
+          &nbsp;·&nbsp; Status: <strong>${(ep.status||'upcoming')}</strong>
+          ${ep.upc ? ` &nbsp;·&nbsp; UPC: <span style="font-family:ui-monospace,Menlo,monospace">${ep.upc}</span>` : ''}
+        </div>
+        ${links ? `<div style="font-size:11px;color:#555;margin-top:6px">${links}</div>` : ''}
+        ${ep.notes ? `<div style="font-size:11px;color:#777;font-style:italic;margin-top:8px;line-height:1.6">${ep.notes}</div>` : ''}
+      </div>
+      ${tracks.length === 0
+        ? `<div style="font-size:12px;color:#888;font-style:italic">No tracks added yet.</div>`
+        : `<table style="width:100%;border-collapse:collapse;margin-top:8px">
+             <thead><tr style="text-align:left">
+               <th style="padding:6px 10px;border-bottom:2px solid #333;font-size:10px;letter-spacing:0.15em;color:#888;text-transform:uppercase;text-align:right;width:36px">#</th>
+               <th style="padding:6px 10px;border-bottom:2px solid #333;font-size:10px;letter-spacing:0.15em;color:#888;text-transform:uppercase">Title / Version</th>
+               <th style="padding:6px 10px;border-bottom:2px solid #333;font-size:10px;letter-spacing:0.15em;color:#888;text-transform:uppercase">Runtime</th>
+               <th style="padding:6px 10px;border-bottom:2px solid #333;font-size:10px;letter-spacing:0.15em;color:#888;text-transform:uppercase">EP ISRC</th>
+             </tr></thead>
+             <tbody>${rows}</tbody>
+           </table>`}
+    </div>`;
+  }).join('');
+
+  const html = pdfShell(
+    'EP Tracklists',
+    'For DistroKid Submission & PRO Registration',
+    `Each EP is a separate release with its own UPC. Tracks here carry the <strong>EP-specific ISRC</strong> assigned by DistroKid — different from each song's single-release ISRC. Use this sheet when submitting to DistroKid and when registering tracks with ASCAP/BMI/SESAC.`,
+    sections,
+    masters, personas
+  );
+  openPDF(html);
+  return `✓ EP Tracklist PDF generated — ${sorted.length} EP${sorted.length!==1?'s':''}`;
+}

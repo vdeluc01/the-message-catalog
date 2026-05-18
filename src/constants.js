@@ -4,7 +4,8 @@ export const SCOPES       = 'https://www.googleapis.com/auth/drive.file';
 export const CATALOG_FILENAME = 'the-message-catalog.json';
 export const PERSONAS_KEY = 'the-message-personas-v1';
 export const APIKEY_KEY   = 'tmsg-apikey';
-export const DATA_KEY     = 'tmsg-catalog-v4';
+export const DATA_KEY     = 'tmsg-catalog-v5';
+export const DATA_KEY_V4  = 'tmsg-catalog-v4';
 export const FID_KEY      = 'tmsg-gdrive-fid';
 export const TOMBSTONES_KEY = 'tmsg-deleted-master-ids';
 
@@ -56,4 +57,26 @@ export const THEMES = [
   'Grace','Healing','Purpose','Surrender','Family','Perseverance','Resurrection'
 ];
 
-export const VIEWS = ['By Persona','By Status','By Audience','By Theme','By Stage','Alphabetical','Release Calendar'];
+export const VIEWS = ['By Persona','By Status','By Audience','By Theme','By Stage','Alphabetical','Release Calendar','EPs'];
+
+export const EP_STATUSES = [
+  { id:'upcoming',  label:'Upcoming',   color:'#5B8DD9' },
+  { id:'submitted', label:'Submitted',  color:'#C8942A' },
+  { id:'live',      label:'Live',       color:'#34D399' },
+];
+
+export const PITCH_PLATFORMS = [
+  { id:'submithub',         label:'SubmitHub',         color:'#A855F7', usesCredits:true  },
+  { id:'spotify-editorial', label:'Spotify Editorial', color:'#34D399', usesCredits:false },
+  { id:'podcast',           label:'Podcast',           color:'#5B8DD9', usesCredits:false },
+  { id:'press',             label:'Press',             color:'#C8942A', usesCredits:false },
+  { id:'other',             label:'Other',             color:'#888',    usesCredits:false },
+];
+
+export const PITCH_RESULTS = [
+  { id:'pending',     label:'Pending',     color:'#C8942A' },
+  { id:'accepted',    label:'Accepted',    color:'#34D399' },
+  { id:'rejected',    label:'Rejected',    color:'#C84A4A' },
+  { id:'no-response', label:'No Response', color:'#666'    },
+  { id:'booked',      label:'Booked',      color:'#34D399' },
+];

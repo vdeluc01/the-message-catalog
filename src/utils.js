@@ -35,6 +35,42 @@ export const lBase = { display:'block', fontSize:9, letterSpacing:'0.2em', color
 // Release-readiness for a single version. Single source of truth — used by
 // the row badge, the expanded checklist UI, the Release Calendar, and the
 // Dashboard "Checklist Ready" stat card.
+// ── ISRC ───────────────────────────────────────────────────────────────
+// Strip hyphens/whitespace and uppercase so 'us-rc1-25-00001' and 'USRC12500001' match.
+export const normalizeIsrc = s => (s||'').replace(/[\s-]/g,'').toUpperCase();
+// Loose ISRC pattern: 2 letters then 4+ alphanumeric chars. Real format is
+// 12 chars total (CCXXXYYNNNNN) but we accept anything plausible so users
+// searching with hyphens or partial codes still get matches.
+export const isIsrcQuery = q => /^[A-Za-z]{2}[A-Za-z0-9-]{3,}$/.test((q||'').trim());
+
+// Pull the primary take's ISRC for a version (falls back to first take).
+export const primaryTakeIsrc = v => {
+  const t = (v?.takes||[]).find(t=>t.isPrimary) || (v?.takes||[])[0];
+  return (t?.isrc||'').trim();
+};
+
+// A version is "released or submitted" if it has a DistroKid submit date or a
+// Spotify URL. This is the population we expect to have an ISRC.
+export const versionIsSubmittedOrLive = v => {
+  const dk = v?.distrokid || {};
+  return !!(dk.submittedDate?.trim() || dk.spotifyUrl?.trim());
+};
+
+// Submitted/live versions that have NOT had their single-release ISRC captured.
+export const versionNeedsIsrc = v => versionIsSubmittedOrLive(v) && !primaryTakeIsrc(v);
+
+// ── Pitches ────────────────────────────────────────────────────────────
+export const hasPendingPitches = v => (v?.pitches||[]).some(p => p.result === 'pending');
+
+// ── EPs ────────────────────────────────────────────────────────────────
+// All EPs that contain a given version. Returns [{ ep, track }] pairs.
+export const getEpsForVersion = (eps, masterId, versionId) =>
+  (eps||[]).flatMap(ep =>
+    (ep.tracks||[])
+      .filter(tr => tr.masterId === masterId && tr.versionId === versionId)
+      .map(track => ({ ep, track }))
+  );
+
 export function checklistStatus(version, masterLyrics) {
   const t0 = version?.takes?.[0] || {};
   const rc = version?.releaseChecklist || {};

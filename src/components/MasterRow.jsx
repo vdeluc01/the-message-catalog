@@ -1,11 +1,161 @@
 import { useState, useEffect, useRef } from 'react';
-import { getP, fmtDate, effectiveStage, iBase, lBase, checklistStatus } from '../utils.js';
-import { STAGES, RELEASE_STATUSES, PERSONA_COLORS } from '../constants.js';
+import { uid, getP, fmtDate, effectiveStage, iBase, lBase, checklistStatus, getEpsForVersion, primaryTakeIsrc } from '../utils.js';
+import { STAGES, RELEASE_STATUSES, PERSONA_COLORS, EP_STATUSES, PITCH_PLATFORMS, PITCH_RESULTS } from '../constants.js';
 import { analyzeWithAI } from '../ai.js';
 import StagePill from './StagePill.jsx';
 import StatusBadge from './StatusBadge.jsx';
 import Tag from './Tag.jsx';
 import AddVersionPanel from './AddVersionPanel.jsx';
+
+// ── PITCH SECTION ────────────────────────────────────────────────────────
+// Inline sub-component: pitch history table + "+ Log Pitch" form for one Version.
+function PitchSection({ master, version, onUpdateVersion }) {
+  const [open, setOpen] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [form, setForm] = useState({ platform:'submithub', contact:'', submittedDate:new Date().toISOString().slice(0,10), credits:'', result:'pending', resultDate:'', notes:'' });
+  const pitches = version.pitches || [];
+
+  const fi = { background:'#0a0a0a', border:'1px solid #1e1e1e', borderRadius:3, color:'#e8dcc8', padding:'6px 9px', fontSize:11, outline:'none', width:'100%' };
+  const sel = { background:'#0d0d0d', border:'1px solid #1e1e1e', borderRadius:3, color:'#aaa', padding:'6px 9px', fontSize:11, outline:'none', width:'100%' };
+
+  const platform = PITCH_PLATFORMS.find(p=>p.id===form.platform) || PITCH_PLATFORMS[0];
+
+  const save = () => {
+    const p = {
+      id: uid(),
+      platform: form.platform,
+      contact: form.contact.trim(),
+      submittedDate: form.submittedDate,
+      credits: platform.usesCredits ? (Number(form.credits)||0) : 0,
+      result: form.result,
+      resultDate: form.resultDate || '',
+      notes: form.notes,
+    };
+    onUpdateVersion(master.id, version.id, { pitches: [...pitches, p] });
+    setForm({ platform:'submithub', contact:'', submittedDate:new Date().toISOString().slice(0,10), credits:'', result:'pending', resultDate:'', notes:'' });
+    setAdding(false);
+  };
+  const update = (id, fields) => onUpdateVersion(master.id, version.id, { pitches: pitches.map(p=>p.id===id?{...p,...fields}:p) });
+  const remove = (id) => { if (window.confirm('Delete this pitch record?')) onUpdateVersion(master.id, version.id, { pitches: pitches.filter(p=>p.id!==id) }); };
+
+  const pendingCount = pitches.filter(p=>p.result==='pending').length;
+  const bookedCount  = pitches.filter(p=>p.result==='booked'||p.result==='accepted').length;
+
+  return (
+    <div style={{ marginBottom:14 }}>
+      <div onClick={()=>setOpen(o=>!o)} style={{ display:'flex', alignItems:'center', gap:10, cursor:'pointer', marginBottom: open ? 7 : 0 }}>
+        <div style={{ fontSize:9, letterSpacing:'0.2em', color:'#555', textTransform:'uppercase' }}>Pitches</div>
+        <div style={{ fontSize:11, color:'#888' }}>
+          {pitches.length} total{pendingCount>0?` · ${pendingCount} pending`:''}{bookedCount>0?` · ${bookedCount} booked/accepted`:''}
+        </div>
+        <span style={{ color:'#666', fontSize:11, marginLeft:'auto' }}>{open?'▲':'▼'}</span>
+      </div>
+      {open && (
+        <div style={{ background:'#0c0c0c', border:'1px solid #1e1e1e', borderRadius:5, padding:'10px 12px' }}>
+          {pitches.length === 0 ? (
+            <div style={{ fontSize:11, color:'#666', fontStyle:'italic', marginBottom:8 }}>No pitches logged yet for this version.</div>
+          ) : (
+            <div style={{ display:'grid', gap:5, marginBottom:10 }}>
+              {pitches.map(p => {
+                const pf = PITCH_PLATFORMS.find(x=>x.id===p.platform) || PITCH_PLATFORMS[4];
+                const rs = PITCH_RESULTS.find(x=>x.id===p.result) || PITCH_RESULTS[0];
+                return (
+                  <div key={p.id} style={{ display:'grid', gridTemplateColumns:'90px 1fr 80px 90px 80px 28px', gap:8, alignItems:'center', padding:'7px 9px', background:'#0f0f0f', border:'1px solid #181818', borderRadius:3 }}>
+                    <span style={{ fontSize:10, color:pf.color, letterSpacing:'0.05em' }}>{pf.label}</span>
+                    <div style={{ fontSize:11, color:'#ddd', minWidth:0, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{p.contact || <span style={{color:'#666'}}>(no contact)</span>}{p.notes && <span style={{color:'#666',fontStyle:'italic'}}> — {p.notes}</span>}</div>
+                    <span style={{ fontSize:10, color:'#888' }}>{p.submittedDate || '—'}</span>
+                    {pf.usesCredits ? <span style={{ fontSize:10, color:'#888', textAlign:'center' }}>{p.credits||0} credit{p.credits===1?'':'s'}</span> : <span style={{ fontSize:10, color:'#333', textAlign:'center' }}>—</span>}
+                    <select value={p.result} onChange={e=>update(p.id,{ result:e.target.value, resultDate: e.target.value==='pending' ? '' : (p.resultDate||new Date().toISOString().slice(0,10)) })}
+                      style={{ ...sel, padding:'4px 6px', fontSize:10, color:rs.color, borderColor:`${rs.color}55` }}>
+                      {PITCH_RESULTS.map(r=><option key={r.id} value={r.id}>{r.label}</option>)}
+                    </select>
+                    <button onClick={()=>remove(p.id)} title="Delete pitch"
+                      style={{ background:'transparent', border:'1px solid #2a1515', borderRadius:3, color:'#6a2a2a', padding:'3px 0', fontSize:10, cursor:'pointer' }}>✕</button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {!adding ? (
+            <button onClick={()=>setAdding(true)}
+              style={{ background:'transparent', border:'1px solid #252525', borderRadius:3, color:'#bbb', padding:'5px 12px', fontSize:11, cursor:'pointer' }}>
+              + Log Pitch
+            </button>
+          ) : (
+            <div style={{ background:'#0a0a0a', border:'1px solid #252525', borderRadius:4, padding:'10px 12px', marginTop:6 }}>
+              <div style={{ fontSize:10, letterSpacing:'0.15em', color:'#C8942A', textTransform:'uppercase', marginBottom:8 }}>Log Pitch</div>
+              <div style={{ display:'grid', gap:7, marginBottom:9 }}>
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:7 }}>
+                  <div><label style={{ ...lBase, marginBottom:3 }}>Platform</label>
+                    <select value={form.platform} onChange={e=>setForm(f=>({...f,platform:e.target.value}))} style={sel}>
+                      {PITCH_PLATFORMS.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}
+                    </select></div>
+                  <div><label style={{ ...lBase, marginBottom:3 }}>Submitted Date</label>
+                    <input type="date" value={form.submittedDate} onChange={e=>setForm(f=>({...f,submittedDate:e.target.value}))} style={fi} /></div>
+                </div>
+                <div><label style={{ ...lBase, marginBottom:3 }}>Contact / Playlist / Show</label>
+                  <input value={form.contact} onChange={e=>setForm(f=>({...f,contact:e.target.value}))}
+                    placeholder={platform.id==='podcast' ? 'e.g. Second Act Stories / Joan Smith' : platform.id==='press' ? 'e.g. Americana Highways' : 'Curator or playlist name'}
+                    style={fi} /></div>
+                <div style={{ display:'grid', gridTemplateColumns: platform.usesCredits ? '1fr 1fr 1fr' : '1fr 1fr', gap:7 }}>
+                  {platform.usesCredits && (
+                    <div><label style={{ ...lBase, marginBottom:3 }}>Credits</label>
+                      <input type="number" min="0" value={form.credits} onChange={e=>setForm(f=>({...f,credits:e.target.value}))} placeholder="e.g. 2" style={fi} /></div>
+                  )}
+                  <div><label style={{ ...lBase, marginBottom:3 }}>Result</label>
+                    <select value={form.result} onChange={e=>setForm(f=>({...f,result:e.target.value}))} style={sel}>
+                      {PITCH_RESULTS.map(r=><option key={r.id} value={r.id}>{r.label}</option>)}
+                    </select></div>
+                  <div><label style={{ ...lBase, marginBottom:3 }}>Result Date</label>
+                    <input type="date" value={form.resultDate} onChange={e=>setForm(f=>({...f,resultDate:e.target.value}))} style={fi} /></div>
+                </div>
+                <div><label style={{ ...lBase, marginBottom:3 }}>Notes</label>
+                  <input value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))} placeholder="angle, follow-up plan, …" style={fi} /></div>
+              </div>
+              <div style={{ display:'flex', gap:6 }}>
+                <button onClick={()=>setAdding(false)} style={{ background:'transparent', border:'1px solid #222', borderRadius:3, color:'#aaa', padding:'6px 14px', fontSize:11, cursor:'pointer' }}>Cancel</button>
+                <button onClick={save}
+                  style={{ flex:1, background:'linear-gradient(135deg,#5B8DD9,#3a6ab0)', border:'none', borderRadius:3, color:'#fff', padding:'6px 0', fontSize:11, letterSpacing:'0.1em', textTransform:'uppercase', cursor:'pointer' }}>
+                  ✓ Save Pitch
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── EP APPEARANCES ───────────────────────────────────────────────────────
+function EpAppearances({ master, version, eps, personas }) {
+  const appearances = getEpsForVersion(eps, master.id, version.id);
+  if (appearances.length === 0) return null;
+  return (
+    <div style={{ marginBottom:14 }}>
+      <div style={{ fontSize:9, letterSpacing:'0.2em', color:'#555', textTransform:'uppercase', marginBottom:7 }}>EP Appearances</div>
+      <div style={{ background:'#0c0c0c', border:'1px solid #1e1e1e', borderRadius:5, padding:'8px 12px' }}>
+        {appearances.map(({ ep, track }) => {
+          const epPersona = getP(ep.persona, personas);
+          const s = EP_STATUSES.find(x=>x.id===ep.status) || EP_STATUSES[0];
+          return (
+            <div key={`${ep.id}-${track.trackNumber}`} style={{ display:'flex', alignItems:'center', gap:10, padding:'5px 0' }}>
+              <span style={{ fontSize:10, color:'#777', width:34, flexShrink:0 }}>Track {track.trackNumber}</span>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontSize:12, color:'#e8dcc8', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{ep.name}</div>
+                <div style={{ fontSize:10, color:epPersona.color, letterSpacing:'0.05em' }}>{epPersona.name}{ep.releaseDate?` · ${ep.releaseDate}`:''}</div>
+              </div>
+              <span style={{ fontSize:10, color:s.color }}>{s.label}</span>
+              <span style={{ fontSize:10, color: track.isrc?'#34D399':'#C8942A', whiteSpace:'nowrap' }}>
+                {track.isrc ? `EP ISRC ${track.isrc}` : '⚠ no EP ISRC'}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 // ── TAKE BLOCK ───────────────────────────────────────────────────────────────
 
@@ -87,7 +237,7 @@ function TakeBlock({ take, master, version, p, effStage, isAutoDetected, onUpdat
 
 // ── VERSION BLOCK ─────────────────────────────────────────────────────────────
 
-function VersionBlock({ version, master, p, isVersionExpanded, onToggleVersion, personas, apiKey,
+function VersionBlock({ version, master, p, isVersionExpanded, onToggleVersion, personas, apiKey, eps,
   onUpdateVersion, addingTakeTo, setAddingTakeTo, takeForm, setTakeForm,
   onAddTake, onUpdateTake, onSetPrimary, onDeleteVersion, onDeleteTake, savePersonas, flash }) {
 
@@ -164,6 +314,12 @@ function VersionBlock({ version, master, p, isVersionExpanded, onToggleVersion, 
                 </span>
               );
             })()}
+            {/* ISRC chip — surfaces the single-release ISRC at a glance, no need to dig into Edit Version Details */}
+            {primaryTakeIsrc(version) && (
+              <span title="Single-release ISRC (primary take)" style={{ fontSize:10, padding:'2px 7px', borderRadius:3, background:'#0f1a0f', border:'1px solid #34D39955', color:'#34D399', letterSpacing:'0.04em', whiteSpace:'nowrap', fontFamily:'ui-monospace, Menlo, monospace' }}>
+                ISRC {primaryTakeIsrc(version)}
+              </span>
+            )}
             <button onClick={e=>{ e.stopPropagation(); setQuickAssignOpen(o=>!o); }}
               style={{ background: quickAssignOpen ? `${p.color}22` : 'transparent', border:`1px solid ${quickAssignOpen ? p.color : '#333'}`,
                        borderRadius:3, color: quickAssignOpen ? p.color : '#888', padding:'3px 9px', fontSize:10,
@@ -344,10 +500,13 @@ function VersionBlock({ version, master, p, isVersionExpanded, onToggleVersion, 
                         </button>
                       </div>
                       {/* Quick-view links when not editing */}
-                      {!dkOpen && (dk.hyperFollowUrl||dk.spotifyUrl) && (
-                        <div style={{ display:'flex', gap:10, marginTop:8 }}>
+                      {!dkOpen && (dk.hyperFollowUrl||dk.spotifyUrl||primaryTakeIsrc(version)) && (
+                        <div style={{ display:'flex', gap:12, marginTop:8, flexWrap:'wrap', alignItems:'center' }}>
                           {dk.hyperFollowUrl && <a href={dk.hyperFollowUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize:10, color:'#C8942A' }}>🔗 HyperFollow</a>}
                           {dk.spotifyUrl && <a href={dk.spotifyUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize:10, color:'#34D399' }}>🎧 Spotify</a>}
+                          {primaryTakeIsrc(version) && (
+                            <span style={{ fontSize:10, color:'#34D399', fontFamily:'ui-monospace, Menlo, monospace' }}>🏷 ISRC {primaryTakeIsrc(version)}</span>
+                          )}
                         </div>
                       )}
                       {/* Edit form */}
@@ -372,6 +531,12 @@ function VersionBlock({ version, master, p, isVersionExpanded, onToggleVersion, 
                   </div>
                 );
               })()}
+              {/* EP appearances — which EPs include this version, with EP-specific ISRC per appearance */}
+              <EpAppearances master={master} version={version} eps={eps} personas={personas} />
+
+              {/* Pitches — collapsible history + log new pitch */}
+              <PitchSection master={master} version={version} onUpdateVersion={onUpdateVersion} />
+
               <button onClick={()=>{ setVEditForm({ label:version.label||'', persona:version.persona||'',
                 stylePrompt:version.takes?.[0]?.stylePrompt||'', genre:version.genre||'',
                 mood:version.mood||'', instrumentalMood:version.instrumentalMood||'',
@@ -533,7 +698,7 @@ function VersionBlock({ version, master, p, isVersionExpanded, onToggleVersion, 
 
 // ── MASTER ROW ────────────────────────────────────────────────────────────────
 
-export default function MasterRow({ master, personas, apiKey, expanded, onToggle, expandedVersion, setExpandedVersion,
+export default function MasterRow({ master, personas, apiKey, eps, expanded, onToggle, expandedVersion, setExpandedVersion,
   addingVersionTo, setAddingVersionTo, addVersionForm, setAddVersionForm,
   addVersionAnalyzing, addVersionConfirming, addVersionAnalysis,
   onAddVersionAnalyze, onAddVersionConfirm, setAddVersionConfirming,
@@ -713,7 +878,7 @@ export default function MasterRow({ master, personas, apiKey, expanded, onToggle
               <VersionBlock key={version.id} version={version} master={master} p={p}
                 isVersionExpanded={isVersionExpanded}
                 onToggleVersion={()=>setExpandedVersion(isVersionExpanded?null:version.id)}
-                personas={personas} apiKey={apiKey} onUpdateVersion={onUpdateVersion}
+                personas={personas} apiKey={apiKey} eps={eps} onUpdateVersion={onUpdateVersion}
                 addingTakeTo={addingTakeTo} setAddingTakeTo={setAddingTakeTo}
                 takeForm={takeForm} setTakeForm={setTakeForm} onAddTake={onAddTake}
                 onUpdateTake={onUpdateTake} onSetPrimary={onSetPrimary}

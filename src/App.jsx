@@ -1,8 +1,11 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { uid, getP, iBase, lBase, effectiveStage, checklistStatus } from './utils.js';
+import { uid, getP, iBase, lBase, effectiveStage, checklistStatus,
+         isIsrcQuery, normalizeIsrc, primaryTakeIsrc, versionIsSubmittedOrLive,
+         versionNeedsIsrc, hasPendingPitches, getEpsForVersion } from './utils.js';
 import {
-  PERSONAS_KEY, APIKEY_KEY, DATA_KEY, FID_KEY, TOMBSTONES_KEY,
-  DEFAULT_PERSONAS, STAGES, RELEASE_STATUSES, VIEWS, PERSONA_COLORS, THEMES
+  PERSONAS_KEY, APIKEY_KEY, DATA_KEY, DATA_KEY_V4, FID_KEY, TOMBSTONES_KEY,
+  DEFAULT_PERSONAS, STAGES, RELEASE_STATUSES, VIEWS, PERSONA_COLORS, THEMES,
+  EP_STATUSES, PITCH_PLATFORMS
 } from './constants.js';
 import { getToken, startOAuth, driveLoad, driveSave } from './drive.js';
 import { analyzeWithAI, enrichWithAI, analyzeThemesWithAI } from './ai.js';
@@ -11,14 +14,15 @@ import {
   exportLabelCSV, exportLabelPDF,
   exportPublisherCSV, exportPublisherPDF,
   exportCuratorCSV, exportCuratorPDF,
-  exportLyricsCSV
+  exportLyricsCSV, exportEpTracklistPDF
 } from './exports.js';
 import Tour from './Tour.jsx';
 import DemoTour from './DemoTour.jsx';
-import { DEMO_MASTERS } from './demoFixture.js';
+import { DEMO_MASTERS, DEMO_EPS } from './demoFixture.js';
 import MasterRow from './components/MasterRow.jsx';
 import AddWizard from './components/AddWizard.jsx';
 import BatchAdd from './components/BatchAdd.jsx';
+import EpView from './components/EpView.jsx';
 
 export default function App() {
   // Demo mode: ?demo=1 or /demo path loads a fixture catalog, skips Google
@@ -32,8 +36,10 @@ export default function App() {
     window.location.pathname === '/demo/'
   );
 
-  // Core data
+  // Core data. DATA_KEY is v5 — { masters, eps }. v4 was a bare masters array;
+  // a one-time read of v4 seeds v5 if v5 hasn't been written yet.
   const [masters, setMasters] = useState(() => isDemo ? DEMO_MASTERS : []);
+  const [eps, setEps] = useState(() => isDemo ? DEMO_EPS : []);
   const [personas, setPersonas] = useState(() => {
     try {
       const p = localStorage.getItem(PERSONAS_KEY);
@@ -59,6 +65,8 @@ export default function App() {
   const [filterPersona, setFilterPersona] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterStage, setFilterStage] = useState('all');
+  const [filterEp, setFilterEp] = useState('all');           // 'all' | epId | '__none__'
+  const [filterIsrc, setFilterIsrc] = useState('all');       // 'all' | 'has' | 'missing'
   const [expandedMaster, setExpandedMaster] = useState(null);
   const [expandedVersion, setExpandedVersion] = useState(null);
   const [expandedGroups, setExpandedGroups] = useState(new Set());
@@ -122,9 +130,30 @@ export default function App() {
       setDriveConnected(true);
       handleDriveLoad(token);
     } else {
-      // Load local data so the UI isn't empty while we redirect
-      const stored = localStorage.getItem(DATA_KEY);
-      if (stored) try { setMasters(JSON.parse(stored)); } catch(e) {}
+      // Load local data so the UI isn't empty while we redirect.
+      // v5 schema: { masters, eps }. v4 was a bare masters array — read once and
+      // promote into the v5 shape with eps:[].
+      try {
+        const v5 = localStorage.getItem(DATA_KEY);
+        if (v5) {
+          const parsed = JSON.parse(v5);
+          if (Array.isArray(parsed)) {
+            setMasters(parsed);                       // very old shape stored under v5 key
+          } else {
+            setMasters(parsed.masters || []);
+            setEps(parsed.eps || []);
+          }
+        } else {
+          const v4 = localStorage.getItem(DATA_KEY_V4);
+          if (v4) {
+            const old = JSON.parse(v4);
+            const oldMasters = Array.isArray(old) ? old : (old?.masters || []);
+            setMasters(oldMasters);
+            setEps([]);
+            try { localStorage.setItem(DATA_KEY, JSON.stringify({ masters: oldMasters, eps: [] })); } catch(_) {}
+          }
+        }
+      } catch(_) {}
       const fid = localStorage.getItem(FID_KEY);
       if (fid) setDriveFileId(fid);
       // Only auto-redirect to OAuth if user has been here before
@@ -141,19 +170,19 @@ export default function App() {
   useEffect(() => {
     if (isDemo) return; // Demo mode never writes to localStorage
     const handle = setTimeout(() => {
-      try { localStorage.setItem(DATA_KEY, JSON.stringify(masters)); } catch (e) {}
+      try { localStorage.setItem(DATA_KEY, JSON.stringify({ masters, eps })); } catch (e) {}
     }, 800);
     return () => clearTimeout(handle);
-  }, [masters]);
+  }, [masters, eps]);
 
   // Auto-save to Google Drive — debounced 4s after any change + every 5 min
   useEffect(() => {
     if (isDemo) return; // Demo mode: no Drive writes
-    if (!driveConnected || masters.length === 0) return;
+    if (!driveConnected || (masters.length === 0 && eps.length === 0)) return;
     if (driveAutoSaveTimer.current) clearTimeout(driveAutoSaveTimer.current);
     driveAutoSaveTimer.current = setTimeout(() => triggerDriveAutoSave(), 4000);
     return () => { if (driveAutoSaveTimer.current) clearTimeout(driveAutoSaveTimer.current); };
-  }, [masters, driveConnected]);
+  }, [masters, eps, driveConnected]);
 
   useEffect(() => {
     if (isDemo) return; // Demo mode: no Drive heartbeat
@@ -175,8 +204,15 @@ export default function App() {
     setDriveExpired(false);
     setDriveStatus('⟳ Saving…');
     try {
-      const current = JSON.parse(localStorage.getItem(DATA_KEY) || '[]');
-      const newId = await driveSave(token, current, driveFileId);
+      // Read whatever's in localStorage (latest) — v5 schema is { masters, eps }.
+      // Tolerate the legacy bare-array v4 shape just in case.
+      let payload = { masters: [], eps: [] };
+      try {
+        const stored = JSON.parse(localStorage.getItem(DATA_KEY) || 'null');
+        if (Array.isArray(stored)) payload = { masters: stored, eps: [] };
+        else if (stored)           payload = { masters: stored.masters || [], eps: stored.eps || [] };
+      } catch(_) {}
+      const newId = await driveSave(token, payload, driveFileId);
       if (newId) {
         if (newId !== driveFileId) { setDriveFileId(newId); localStorage.setItem(FID_KEY, newId); }
         setDriveStatus('☁ Saved');
@@ -192,21 +228,34 @@ export default function App() {
       const result = await driveLoad(token);
       if (result) {
         const rawDriveMasters = result.data.masters || [];
+        const rawDriveEps     = result.data.eps     || [];
         // Filter out anything the user has deleted locally — tombstones survive Drive reconnects
         let tombstones = [];
         try { tombstones = JSON.parse(localStorage.getItem(TOMBSTONES_KEY) || '[]'); } catch(_) {}
         const tombSet = new Set(tombstones);
         const driveMasters = rawDriveMasters.filter(m => !tombSet.has(m.id));
         const droppedFromDrive = rawDriveMasters.length - driveMasters.length;
-        const stored = localStorage.getItem(DATA_KEY);
-        const localMasters = stored ? JSON.parse(stored) : [];
+        // Local — v5 shape, but tolerate v4-style bare array.
+        let localMasters = [];
+        let localEps     = [];
+        try {
+          const stored = JSON.parse(localStorage.getItem(DATA_KEY) || 'null');
+          if (Array.isArray(stored)) localMasters = stored;
+          else if (stored) { localMasters = stored.masters || []; localEps = stored.eps || []; }
+        } catch(_) {}
         const localIds = new Set(localMasters.map(m => m.id));
         const driveOnly = driveMasters.filter(m => !localIds.has(m.id));
         const merged = localMasters.length > 0 ? [...localMasters, ...driveOnly] : driveMasters;
+        // EP merge — dedupe by id, prefer local edits.
+        const localEpIds = new Set(localEps.map(e => e.id));
+        const epsMerged = localEps.length > 0
+          ? [...localEps, ...rawDriveEps.filter(e => !localEpIds.has(e.id))]
+          : rawDriveEps;
         setMasters(merged);
+        setEps(epsMerged);
         setDriveFileId(result.fileId);
         localStorage.setItem(FID_KEY, result.fileId);
-        await driveSave(token, merged, result.fileId);
+        await driveSave(token, { masters: merged, eps: epsMerged }, result.fileId);
         if (driveOnly.length > 0) {
           const tombMsg = droppedFromDrive > 0 ? ` (${droppedFromDrive} previously-deleted song${droppedFromDrive!==1?'s':''} kept deleted)` : '';
           flashDrive(`✓ Reconnected — pulled in ${driveOnly.length} Drive-only song${driveOnly.length!==1?'s':''}${tombMsg}`, 4000);
@@ -216,11 +265,17 @@ export default function App() {
         setDriveStatus('☁ Connected');
         setDriveExpired(false);
       } else {
-        const stored = localStorage.getItem(DATA_KEY);
-        const local = stored ? JSON.parse(stored) : [];
-        if (local.length > 0) {
+        // No Drive file yet — push whatever we have locally.
+        let localMasters = [];
+        let localEps     = [];
+        try {
+          const stored = JSON.parse(localStorage.getItem(DATA_KEY) || 'null');
+          if (Array.isArray(stored)) localMasters = stored;
+          else if (stored) { localMasters = stored.masters || []; localEps = stored.eps || []; }
+        } catch(_) {}
+        if (localMasters.length > 0 || localEps.length > 0) {
           flashDrive('Saving local data to Drive…', 60000);
-          const newId = await driveSave(token, local, null);
+          const newId = await driveSave(token, { masters: localMasters, eps: localEps }, null);
           if (newId) { setDriveFileId(newId); localStorage.setItem(FID_KEY, newId); }
         }
         flashDrive('✓ Drive connected');
@@ -235,7 +290,7 @@ export default function App() {
     if (!token) { flashDrive('Session expired — reconnect Drive'); return; }
     setDriveSyncing(true); flashDrive('Saving to Google Drive…', 60000);
     try {
-      const newId = await driveSave(token, masters, driveFileId);
+      const newId = await driveSave(token, { masters, eps }, driveFileId);
       if (newId) {
         if (newId !== driveFileId) { setDriveFileId(newId); localStorage.setItem(FID_KEY, newId); }
         flashDrive('✓ Saved to Google Drive');
@@ -438,7 +493,7 @@ export default function App() {
   }
 
   function handleExport() {
-    const body = JSON.stringify({ masters, savedAt:new Date().toISOString(), version:'4.0' }, null, 2);
+    const body = JSON.stringify({ masters, eps, savedAt:new Date().toISOString(), version:'5.0' }, null, 2);
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([body],{type:'application/json'}));
     a.download = 'the-message-catalog-backup.json'; a.click();
@@ -470,6 +525,7 @@ export default function App() {
               releaseStatus:v.releaseStatus||'draft', isPrimary:true, notes:'', addedAt:v.addedAt||new Date().toISOString() }]
           }))
         }));
+        const loadedEps = (parsed.eps && Array.isArray(parsed.eps)) ? parsed.eps : [];
         // Restoring a backup explicitly resurrects whatever's in it — clear tombstones for those IDs
         try {
           const existing = JSON.parse(localStorage.getItem(TOMBSTONES_KEY) || '[]');
@@ -478,7 +534,8 @@ export default function App() {
           if (remaining.length !== existing.length) localStorage.setItem(TOMBSTONES_KEY, JSON.stringify(remaining));
         } catch(_) {}
         setMasters(loaded);
-        flash('✓ '+loaded.length+' songs imported');
+        setEps(loadedEps);
+        flash(`✓ ${loaded.length} song${loaded.length!==1?'s':''}${loadedEps.length?` and ${loadedEps.length} EP${loadedEps.length!==1?'s':''}`:''} imported`);
         e.target.value = '';
       } catch(err) { alert('Could not read file: '+err.message); }
     };
@@ -698,36 +755,97 @@ export default function App() {
     save(masters.map(m=>m.id!==masterId?m:{...m,versions:m.versions.map(v=>v.id!==versionId?v:{...v,takes:v.takes.filter(t=>t.id!==takeId)})}));
   }
 
+  // ── EPs ──
+  function createEp(ep)              { setEps(prev => [...prev, ep]); flash('✓ EP created'); }
+  function updateEp(epId, fields)    { setEps(prev => prev.map(e => e.id===epId ? { ...e, ...fields } : e)); flash('✓ EP updated'); }
+  function deleteEp(epId)            { setEps(prev => prev.filter(e => e.id !== epId)); flash('✓ EP deleted'); }
+
   // ── Computed ──
   const allVersions = useMemo(() => masters.flatMap(m=>m.versions||[]), [masters]);
   const allTakes    = useMemo(() => allVersions.flatMap(v=>v.takes||[]), [allVersions]);
 
-  const dash = useMemo(() => ({
-    total: masters.length, totalVersions: allVersions.length,
-    byStage: STAGES.map(s=>({...s, count: allTakes.filter(t=>(t.stage||'idea')===s.id).length})),
-    byStatus: RELEASE_STATUSES.map(r=>({...r, count:allTakes.filter(t=>(t.releaseStatus||'draft')===r.id).length})),
-    byPersona: personas.map(p=>({...p, count:allVersions.filter(v=>v.persona===p.id).length})),
-    topThemes: Object.entries(masters.reduce((a,m)=>{ [...new Set((m.versions||[]).flatMap(v=>v.themes||[]))].forEach(t=>{a[t]=(a[t]||0)+1;}); return a; },{})).sort((a,b)=>b[1]-a[1]).slice(0,10),
-    topAudiences: Object.entries(allVersions.reduce((a,v)=>{ if(v.targetAudience) a[v.targetAudience]=(a[v.targetAudience]||0)+1; return a; },{})).sort((a,b)=>b[1]-a[1]).slice(0,5),
-    dkSubmitted: allVersions.filter(v=>v.distrokid?.submittedDate?.trim()).length,
-    dkLive: allVersions.filter(v=>v.distrokid?.spotifyUrl?.trim()).length,
-    checklistReady: allVersions.filter(v=>{
-      const master=masters.find(m=>(m.versions||[]).some(vv=>vv.id===v.id));
-      return checklistStatus(v, master?.lyrics).allDone;
-    }).length,
-  }), [masters, allVersions, allTakes, personas]);
-  const filtered = useMemo(() => masters.filter(m => {
-    const q = searchQ.toLowerCase();
-    const mQ = !q || m.title?.toLowerCase().includes(q) || m.notes?.toLowerCase().includes(q) ||
-      m.lyrics?.toLowerCase().includes(q) ||
-      (m.versions||[]).some(v=>v.genre?.toLowerCase().includes(q)||(v.themes||[]).some(t=>t.toLowerCase().includes(q))||v.versionSummary?.toLowerCase().includes(q));
-    const mP = filterPersona==='all' || (filterPersona==='__unassigned__'
-      ? (m.versions||[]).some(v=>!v.persona||!personas.find(p=>p.id===v.persona))
-      : (m.versions||[]).some(v=>v.persona===filterPersona));
-    const mS = filterStatus==='all'  || (m.versions||[]).some(v=>(v.takes||[]).some(t=>t.releaseStatus===filterStatus));
-    const mSt= filterStage==='all'   || (m.versions||[]).some(v=>(v.takes||[]).some(t=>t.stage===filterStage));
-    return mQ && mP && mS && mSt;
-  }), [masters, personas, searchQ, filterPersona, filterStatus, filterStage]);
+  const dash = useMemo(() => {
+    // ISRC completeness — denominator is submitted/live versions; numerator is
+    // those whose primary take has its single-release ISRC captured.
+    const isrcEligible = allVersions.filter(versionIsSubmittedOrLive);
+    const isrcCaptured = isrcEligible.filter(v => !!primaryTakeIsrc(v));
+    const isrcMissing  = isrcEligible.length - isrcCaptured.length;
+
+    // Pitch summary — totals + this month + per-type breakdown
+    const allPitches = allVersions.flatMap(v => (v.pitches||[]).map(p=>({...p, _v:v})));
+    const now = new Date();
+    const monthKey = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+    const inMonth = p => (p.submittedDate||'').startsWith(monthKey);
+    const byPlatform = PITCH_PLATFORMS.map(pl => {
+      const ps = allPitches.filter(p=>p.platform===pl.id);
+      const decided = ps.filter(p=>p.result!=='pending');
+      const positive = ps.filter(p=>p.result==='accepted'||p.result==='booked');
+      return { ...pl, total:ps.length, pending:ps.filter(p=>p.result==='pending').length,
+               accepted: positive.length,
+               acceptanceRate: decided.length ? Math.round(100*positive.length/decided.length) : null };
+    });
+    const submithubCreditsTotal = allPitches.filter(p=>p.platform==='submithub').reduce((a,p)=>a+(Number(p.credits)||0),0);
+    const submithubCreditsMonth = allPitches.filter(p=>p.platform==='submithub'&&inMonth(p)).reduce((a,p)=>a+(Number(p.credits)||0),0);
+
+    return ({
+      total: masters.length, totalVersions: allVersions.length,
+      byStage: STAGES.map(s=>({...s, count: allTakes.filter(t=>(t.stage||'idea')===s.id).length})),
+      byStatus: RELEASE_STATUSES.map(r=>({...r, count:allTakes.filter(t=>(t.releaseStatus||'draft')===r.id).length})),
+      byPersona: personas.map(p=>({...p, count:allVersions.filter(v=>v.persona===p.id).length})),
+      topThemes: Object.entries(masters.reduce((a,m)=>{ [...new Set((m.versions||[]).flatMap(v=>v.themes||[]))].forEach(t=>{a[t]=(a[t]||0)+1;}); return a; },{})).sort((a,b)=>b[1]-a[1]).slice(0,10),
+      topAudiences: Object.entries(allVersions.reduce((a,v)=>{ if(v.targetAudience) a[v.targetAudience]=(a[v.targetAudience]||0)+1; return a; },{})).sort((a,b)=>b[1]-a[1]).slice(0,5),
+      dkSubmitted: allVersions.filter(v=>v.distrokid?.submittedDate?.trim()).length,
+      dkLive: allVersions.filter(v=>v.distrokid?.spotifyUrl?.trim()).length,
+      checklistReady: allVersions.filter(v=>{
+        const master=masters.find(m=>(m.versions||[]).some(vv=>vv.id===v.id));
+        return checklistStatus(v, master?.lyrics).allDone;
+      }).length,
+      isrcEligible: isrcEligible.length,
+      isrcCaptured: isrcCaptured.length,
+      isrcMissing,
+      pitches: { all: allPitches.length, byPlatform, submithubCreditsTotal, submithubCreditsMonth, monthKey },
+    });
+  }, [masters, allVersions, allTakes, personas]);
+  const filtered = useMemo(() => {
+    const qRaw  = searchQ.trim();
+    const q     = qRaw.toLowerCase();
+    const isIsrc = isIsrcQuery(qRaw);
+    const qIsrc  = normalizeIsrc(qRaw);
+    // Map of master IDs touched by an ISRC search hit (single-take OR EP-track).
+    // A non-ISRC search ignores this map and uses the text search below.
+    const isrcHitMasterIds = new Set();
+    if (isIsrc) {
+      masters.forEach(m => (m.versions||[]).forEach(v => (v.takes||[]).forEach(t => {
+        if (normalizeIsrc(t.isrc).includes(qIsrc)) isrcHitMasterIds.add(m.id);
+      })));
+      (eps||[]).forEach(ep => (ep.tracks||[]).forEach(tr => {
+        if (normalizeIsrc(tr.isrc).includes(qIsrc) && tr.masterId) isrcHitMasterIds.add(tr.masterId);
+      }));
+    }
+    return masters.filter(m => {
+      const textMatch = !q || m.title?.toLowerCase().includes(q) || m.notes?.toLowerCase().includes(q) ||
+        m.lyrics?.toLowerCase().includes(q) ||
+        (m.versions||[]).some(v=>v.genre?.toLowerCase().includes(q)||(v.themes||[]).some(t=>t.toLowerCase().includes(q))||v.versionSummary?.toLowerCase().includes(q)
+                                  || (v.pitches||[]).some(p=>(p.contact||'').toLowerCase().includes(q)));
+      const mQ = !q || textMatch || (isIsrc && isrcHitMasterIds.has(m.id));
+      const mP = filterPersona==='all' || (filterPersona==='__unassigned__'
+        ? (m.versions||[]).some(v=>!v.persona||!personas.find(p=>p.id===v.persona))
+        : (m.versions||[]).some(v=>v.persona===filterPersona));
+      const mS = filterStatus==='all'  || (m.versions||[]).some(v=>(v.takes||[]).some(t=>t.releaseStatus===filterStatus));
+      const mSt= filterStage==='all'   || (m.versions||[]).some(v=>(v.takes||[]).some(t=>t.stage===filterStage));
+      // EP filter: 'all' / __none__ / specific epId
+      const mEp = filterEp === 'all' ? true
+        : filterEp === '__none__'
+          ? !(eps||[]).some(ep => (ep.tracks||[]).some(tr => tr.masterId === m.id))
+          : (eps.find(ep=>ep.id===filterEp)?.tracks||[]).some(tr => tr.masterId === m.id);
+      // ISRC filter: 'all' / 'has' (any version has single-release ISRC) / 'missing' (any submitted/live version w/o ISRC)
+      const mIsrc = filterIsrc === 'all' ? true
+        : filterIsrc === 'has'
+          ? (m.versions||[]).some(v => !!primaryTakeIsrc(v))
+          : (m.versions||[]).some(versionNeedsIsrc);
+      return mQ && mP && mS && mSt && mEp && mIsrc;
+    });
+  }, [masters, eps, personas, searchQ, filterPersona, filterStatus, filterStage, filterEp, filterIsrc]);
 
   // ── RENDER ────────────────────────────────────────────────────────────────────
   return (
@@ -1078,6 +1196,16 @@ export default function App() {
                         <button onClick={()=>flash(exportLyricsCSV(masters,personas))} style={eCSV}>📊 CSV</button>
                       </div>
                     </div>
+
+                    <div style={eCard}>
+                      <div style={eTitle}>📀 EP Tracklists</div>
+                      <div style={eDesc}>
+                        One page per EP — name, persona, release date, UPC, status, links, and the ordered tracklist with the <strong>EP-specific ISRC</strong> for each track (different from each song's single-release ISRC). Useful as a reference when submitting to DistroKid and registering tracks with your PRO.
+                      </div>
+                      <div style={eBtns}>
+                        <button onClick={()=>flash(exportEpTracklistPDF(eps, masters, personas))} style={ePDF}>📄 PDF</button>
+                      </div>
+                    </div>
                   </>
                 );
               })()}
@@ -1182,6 +1310,20 @@ export default function App() {
               <option value="all">All Statuses</option>
               {RELEASE_STATUSES.map(r=><option key={r.id} value={r.id}>{r.label}</option>)}
             </select>
+            <select value={filterEp} onChange={e=>setFilterEp(e.target.value)}
+              style={{ background:'#111', border:'1px solid #1e1e1e', borderRadius:4, color:'#ccc', padding:'8px 12px', fontSize:12, outline:'none', cursor:'pointer' }}
+              title="Filter songs to those on a specific EP">
+              <option value="all">All EPs</option>
+              <option value="__none__">Not on any EP</option>
+              {eps.map(ep=><option key={ep.id} value={ep.id}>📀 {ep.name}</option>)}
+            </select>
+            <select value={filterIsrc} onChange={e=>setFilterIsrc(e.target.value)}
+              style={{ background:'#111', border:'1px solid #1e1e1e', borderRadius:4, color:'#ccc', padding:'8px 12px', fontSize:12, outline:'none', cursor:'pointer' }}
+              title="Filter by single-release ISRC status">
+              <option value="all">All ISRCs</option>
+              <option value="has">Has ISRC</option>
+              <option value="missing">Missing ISRC (submitted/live)</option>
+            </select>
             <div style={{ display:'flex', gap:4, marginLeft:'auto', flexWrap:'wrap' }}>
               {['Dashboard',...VIEWS].map(v=>(
                 <button key={v} onClick={()=>changeView(v)}
@@ -1211,6 +1353,51 @@ export default function App() {
                   </div>
                 ))}
               </div>
+
+              {/* ISRC completeness — count submitted/live versions whose primary-take ISRC has been captured */}
+              {dash.isrcEligible > 0 && (
+                <div style={{ background:'#0f0f0f', border:`1px solid ${dash.isrcMissing>0?'#C8942A55':'#34D39955'}`, borderRadius:6, padding:'14px 18px', display:'flex', alignItems:'center', gap:14, flexWrap:'wrap' }}>
+                  <div style={{ fontSize:24, color:dash.isrcMissing>0?'#C8942A':'#34D399' }}>{dash.isrcMissing>0?'⚠':'✓'}</div>
+                  <div style={{ flex:1, minWidth:200 }}>
+                    <div style={{ fontSize:13, color:'#e8dcc8', marginBottom:3 }}>ISRC Completeness</div>
+                    <div style={{ fontSize:11, color:'#888', lineHeight:1.6 }}>
+                      <strong style={{ color:dash.isrcMissing>0?'#C8942A':'#34D399' }}>{dash.isrcCaptured} of {dash.isrcEligible}</strong> submitted releases have their single-release ISRC captured.
+                      {dash.isrcMissing>0 && <> {dash.isrcMissing} still need to be filled in from DistroKid.</>}
+                    </div>
+                  </div>
+                  {dash.isrcMissing>0 && (
+                    <button onClick={()=>{ setFilterIsrc('missing'); changeView('Alphabetical'); }}
+                      style={{ background:'transparent', border:'1px solid #C8942A55', borderRadius:4, color:'#C8942A', padding:'7px 14px', fontSize:11, cursor:'pointer', letterSpacing:'0.08em', textTransform:'uppercase', whiteSpace:'nowrap' }}>
+                      Show {dash.isrcMissing} →
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Pitch summary — totals + this-month SubmitHub spend + per-platform breakdown */}
+              {dash.pitches.all > 0 && (
+                <div style={{ background:'#0f0f0f', border:'1px solid #1a1a1a', borderRadius:6, padding:18 }}>
+                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12, flexWrap:'wrap', gap:10 }}>
+                    <div style={{ fontSize:10, letterSpacing:'0.2em', color:'#bbb', textTransform:'uppercase' }}>Pitches</div>
+                    <div style={{ fontSize:11, color:'#888' }}>
+                      <strong style={{ color:'#A855F7' }}>{dash.pitches.submithubCreditsTotal}</strong> SubmitHub credits spent total
+                      {' · '}<strong style={{ color:'#A855F7' }}>{dash.pitches.submithubCreditsMonth}</strong> this month
+                    </div>
+                  </div>
+                  <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(160px,1fr))', gap:10 }}>
+                    {dash.pitches.byPlatform.filter(p=>p.total>0).map(p=>(
+                      <div key={p.id} style={{ background:'#0c0c0c', border:`1px solid ${p.color}22`, borderLeft:`3px solid ${p.color}`, borderRadius:4, padding:'10px 12px' }}>
+                        <div style={{ fontSize:11, color:p.color, marginBottom:4, letterSpacing:'0.05em' }}>{p.label}</div>
+                        <div style={{ fontSize:18, color:'#e8dcc8', lineHeight:1.1, marginBottom:2 }}>{p.total}</div>
+                        <div style={{ fontSize:10, color:'#666', lineHeight:1.5 }}>
+                          {p.pending>0 && <>{p.pending} pending · </>}
+                          {p.acceptanceRate!==null ? `${p.acceptanceRate}% positive` : 'no results yet'}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Persona breakdown */}
               {dash.byPersona.length>0 && (
@@ -1292,8 +1479,14 @@ export default function App() {
             </div>
           )}
 
+          {/* EPs view */}
+          {view === 'EPs' && (
+            <EpView eps={eps} masters={masters} personas={personas}
+              onCreateEp={createEp} onUpdateEp={updateEp} onDeleteEp={deleteEp} />
+          )}
+
           {/* Song list — grouped by view */}
-          {view !== 'Dashboard' && view !== 'Release Calendar' && (() => {
+          {view !== 'Dashboard' && view !== 'Release Calendar' && view !== 'EPs' && (() => {
             const sorted = [...filtered].sort((a,b)=>a.title.localeCompare(b.title));
             let groups = [];
             if (view==='Alphabetical') {
@@ -1340,7 +1533,7 @@ export default function App() {
                     <div style={{ fontSize:11, color:'#555', marginLeft:10 }}>{isOpen ? '▲' : '▼'}</div>
                   </div>
                   {isOpen && group.items.map(master => (
-                    <MasterRow key={master.id} master={master} personas={personas} apiKey={apiKey}
+                    <MasterRow key={master.id} master={master} personas={personas} apiKey={apiKey} eps={eps}
                       expanded={expandedMaster===master.id}
                       onToggle={()=>setExpandedMaster(expandedMaster===master.id?null:master.id)}
                       expandedVersion={expandedVersion} setExpandedVersion={setExpandedVersion}

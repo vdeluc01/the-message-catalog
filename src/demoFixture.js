@@ -64,6 +64,12 @@ export const DEMO_MASTERS = [
             addedAt: '2026-03-08T12:00:00.000Z',
           },
         ],
+        pitches: [
+          { id:'demo-pi-1', platform:'submithub',         contact:'Highway Songs Playlist / Liam Carter', submittedDate:'2026-05-10', credits:2, result:'accepted',    resultDate:'2026-05-12', notes:'Added to the playlist for 30 days.' },
+          { id:'demo-pi-2', platform:'spotify-editorial', contact:'Spotify for Artists — Fresh Folk',     submittedDate:'2026-05-11', credits:0, result:'pending',     resultDate:'',           notes:'Submitted 4 weeks before release per Spotify guidance.' },
+          { id:'demo-pi-3', platform:'podcast',           contact:'Second Act Stories / Joan Smith',      submittedDate:'2026-05-09', credits:0, result:'booked',      resultDate:'2026-05-14', notes:'Recording the episode 5/24 — talking about the road-song origin.' },
+          { id:'demo-pi-4', platform:'press',             contact:'Americana Highways',                   submittedDate:'2026-05-12', credits:0, result:'no-response', resultDate:'',           notes:'Follow up if no reply by 5/22.' },
+        ],
       },
     ],
   },
@@ -366,6 +372,88 @@ export const DEMO_MASTERS = [
     ],
   },
 
+  // 8b. RELEASED, on the Long Way Home EP (track 2)
+  {
+    id: 'demo-m-9',
+    title: 'Cedar & Smoke',
+    lyrics:
+      "Cedar and smoke and a back porch hymn\nThe summer we lost the river to the rain\nMy grandfather's whistle, my grandmother's bread\nThe parts of me they couldn't put a name to\n\nI carry it all like a coat I can't take off\nAnd the longer I wear it the better it fits\nThe long way home, the long way home\nIs where the body remembers the rest",
+    notes: 'Companion piece to Long Way Home — same persona, same record.',
+    addedAt: '2026-03-12T12:00:00.000Z',
+    versions: [
+      {
+        id: 'demo-v-9',
+        label: 'Americana — Track 2',
+        persona: 'long-way-home',
+        genre: 'Americana / Folk',
+        themes: ['Family','Journey','Faith'],
+        mood: 'Contemplative',
+        instrumentalMood: 'Acoustic',
+        targetAudience: 'General',
+        duration: 'Standard (2-4 min)',
+        runtime: '3:24',
+        bpm: '78',
+        musicalKey: 'G Major',
+        versionSummary: 'Fingerpicked Americana with a brushed snare and a single harmony vocal on the chorus. Built to sit between the lead single and the third track of the EP.',
+        albumNote: 'EP track 2.',
+        addedAt: '2026-03-12T12:00:00.000Z',
+        releaseChecklist: { listened: true, coverArt: true, audioDownloaded: true },
+        distrokid: {
+          submittedDate: '2026-04-22',
+          releaseDate: '2026-05-09',
+          hyperFollowUrl: 'https://distrokid.com/hyperfollow/longwayhome/cedar-and-smoke',
+          spotifyUrl: 'https://open.spotify.com/track/demo-cedar-and-smoke',
+        },
+        takes: [
+          { id:'demo-t-9', label:'Master', stylePrompt:'americana folk, fingerpicked guitar, brushed snare, single harmony vocal, late-afternoon room reverb', sunoUrl:'https://suno.com/s/demo-cedar-and-smoke', sunoVersion:'v4', sunoCreatedAt:'2026-03-12', stage:'final', releaseStatus:'released', isPrimary:true, isrc:'USRC12500009', notes:'', addedAt:'2026-03-12T12:00:00.000Z' },
+        ],
+        pitches: [],
+      },
+    ],
+  },
+
+  // 8c. SUBMITTED, on the Long Way Home EP (track 3) — ISRC not yet captured
+  {
+    id: 'demo-m-10',
+    title: 'Quiet Town',
+    lyrics:
+      "There's a quiet town with my name on the steeple\nWhere they still remember which pew was mine\nThey don't ask where I went\nThey just ask if I'm staying this time\n\nThe quiet town, the quiet town\nIs the only place I never tried to leave\nThe quiet town, the quiet town\nIs the one thing I learned to believe",
+    notes: '',
+    addedAt: '2026-03-20T12:00:00.000Z',
+    versions: [
+      {
+        id: 'demo-v-10',
+        label: 'Americana — Track 3',
+        persona: 'long-way-home',
+        genre: 'Americana / Folk',
+        themes: ['Home','Faith','Journey'],
+        mood: 'Tender',
+        instrumentalMood: 'Acoustic',
+        targetAudience: 'General',
+        duration: 'Standard (2-4 min)',
+        runtime: '3:51',
+        bpm: '74',
+        musicalKey: 'C Major',
+        versionSummary: 'Late-night Americana — fingerpicked guitar, a steel-string descant in the second half, no drums until the bridge. The closer of the EP.',
+        albumNote: 'EP closer.',
+        addedAt: '2026-03-20T12:00:00.000Z',
+        releaseChecklist: { listened: true, coverArt: true, audioDownloaded: true },
+        distrokid: {
+          submittedDate: '2026-05-05',
+          releaseDate: '2026-05-23',
+          hyperFollowUrl: 'https://distrokid.com/hyperfollow/longwayhome/quiet-town',
+          spotifyUrl: '',
+        },
+        takes: [
+          { id:'demo-t-10', label:'Master', stylePrompt:'americana folk, fingerpicked guitar, late-arriving snare on the bridge, soft male lead vocal, dusty room reverb', sunoUrl:'https://suno.com/s/demo-quiet-town', sunoVersion:'v4', sunoCreatedAt:'2026-03-20', stage:'final', releaseStatus:'ready', isPrimary:true, isrc:'', notes:'', addedAt:'2026-03-20T12:00:00.000Z' },
+        ],
+        pitches: [
+          { id:'demo-pi-5', platform:'submithub', contact:'Quiet Mornings Playlist / Ana Liu', submittedDate:'2026-05-15', credits:1, result:'pending', resultDate:'', notes:'' },
+        ],
+      },
+    ],
+  },
+
   // 8. LYRICS-ONLY — newest song, just lyrics written
   {
     id: 'demo-m-8',
@@ -412,5 +500,28 @@ export const DEMO_MASTERS = [
         ],
       },
     ],
+  },
+];
+
+// Demo EPs. Tracks reference existing demo masters/versions — same songs the
+// catalog already knows about, just grouped into a release. EP-specific ISRCs
+// are different from each track's single-release ISRC on the master.
+export const DEMO_EPS = [
+  {
+    id: 'demo-ep-1',
+    name: 'Long Way Home — EP',
+    persona: 'long-way-home',
+    releaseDate: '2026-07-15',
+    upc: '196589000101',
+    hyperFollowUrl: 'https://distrokid.com/hyperfollow/longwayhome/long-way-home-ep',
+    spotifyUrl: '',
+    appleMusicUrl: '',
+    status: 'upcoming',
+    tracks: [
+      { masterId: 'demo-m-1',  versionId: 'demo-v-1',  trackNumber: 1, isrc: 'USRC12500101' },
+      { masterId: 'demo-m-9',  versionId: 'demo-v-9',  trackNumber: 2, isrc: 'USRC12500102' },
+      { masterId: 'demo-m-10', versionId: 'demo-v-10', trackNumber: 3, isrc: 'USRC12500103' },
+    ],
+    notes: 'Three-song EP — same persona, same record. EP-specific ISRCs from DistroKid.',
   },
 ];

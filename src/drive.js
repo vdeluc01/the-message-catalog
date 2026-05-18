@@ -30,8 +30,12 @@ export async function driveLoad(token) {
   return { data: await r.json(), fileId: file.id };
 }
 
-export async function driveSave(token, masters, fileId) {
-  const body = JSON.stringify({ masters, savedAt:new Date().toISOString(), version:'4.0' }, null, 2);
+export async function driveSave(token, data, fileId) {
+  // `data` is { masters, eps }. Accept the legacy shape (a bare masters array)
+  // for safety while older code paths catch up.
+  const masters = Array.isArray(data) ? data : (data?.masters || []);
+  const eps     = Array.isArray(data) ? []   : (data?.eps     || []);
+  const body = JSON.stringify({ masters, eps, savedAt:new Date().toISOString(), version:'5.0' }, null, 2);
   const blob = new Blob([body], { type:'application/json' });
   if (fileId) {
     const r = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`,
