@@ -380,7 +380,8 @@ function VersionBlock({ version, master, p, isVersionExpanded, onToggleVersion, 
                 themes:(version.themes||[]).join(', '),
                 bpm:version.bpm||'', musicalKey:version.musicalKey||'',
                 runtime:version.runtime||'', syncAvailable:version.syncAvailable||'',
-                proStatus:version.proStatus||'' }); setEditingVersion(true); }}
+                proStatus:version.proStatus||'',
+                isrc:(version.takes?.find(t=>t.isPrimary)||version.takes?.[0])?.isrc||'' }); setEditingVersion(true); }}
                 style={{ background:'transparent', border:'1px solid #252525', borderRadius:3, color:'#bbb', padding:'4px 12px', fontSize:10, cursor:'pointer', marginBottom:14 }}>
                 ✎ Edit Version Details
               </button>
@@ -471,7 +472,7 @@ function VersionBlock({ version, master, p, isVersionExpanded, onToggleVersion, 
                   const themes = vEditForm.themes.split(',').map(t=>t.trim()).filter(Boolean);
                   // Find the primary take's index so we can write stylePrompt + isrc to it
                   const primaryIdx = Math.max(0, (version.takes||[]).findIndex(t=>t.isPrimary));
-                  const isrc = vEditForm.isrc.trim();
+                  const isrc = (vEditForm.isrc||'').trim();
                   onUpdateVersion(master.id, version.id, { label:vEditForm.label, persona:vEditForm.persona,
                     genre:vEditForm.genre, mood:vEditForm.mood, instrumentalMood:vEditForm.instrumentalMood,
                     targetAudience:vEditForm.targetAudience, duration:vEditForm.duration, themes,
