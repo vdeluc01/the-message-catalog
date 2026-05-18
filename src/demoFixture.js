@@ -47,6 +47,8 @@ export const DEMO_MASTERS = [
           releaseDate: '2026-05-09',
           hyperFollowUrl: 'https://distrokid.com/hyperfollow/longwayhome/long-way-home',
           spotifyUrl: 'https://open.spotify.com/track/demo-long-way-home',
+          appleMusicTrackUrl: 'https://music.apple.com/us/album/long-way-home/demo?i=demo',
+          appleMusicUrl: 'https://music.apple.com/us/artist/long-way-home/507041602',
         },
         takes: [
           {

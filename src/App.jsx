@@ -23,6 +23,7 @@ import MasterRow from './components/MasterRow.jsx';
 import AddWizard from './components/AddWizard.jsx';
 import BatchAdd from './components/BatchAdd.jsx';
 import EpView from './components/EpView.jsx';
+import PersonasView from './components/PersonasView.jsx';
 
 export default function App() {
   // Demo mode: ?demo=1 or /demo path loads a fixture catalog, skips Google
@@ -67,6 +68,7 @@ export default function App() {
   const [filterStage, setFilterStage] = useState('all');
   const [filterEp, setFilterEp] = useState('all');           // 'all' | epId | '__none__'
   const [filterIsrc, setFilterIsrc] = useState('all');       // 'all' | 'has' | 'missing'
+  const [filterRelease, setFilterRelease] = useState('all'); // 'all' | 'spotify' | 'submitted' | 'hyperfollow' | 'thisMonth' | 'next30'
   const [expandedMaster, setExpandedMaster] = useState(null);
   const [expandedVersion, setExpandedVersion] = useState(null);
   const [expandedGroups, setExpandedGroups] = useState(new Set());
@@ -843,9 +845,35 @@ export default function App() {
         : filterIsrc === 'has'
           ? (m.versions||[]).some(v => !!primaryTakeIsrc(v))
           : (m.versions||[]).some(versionNeedsIsrc);
-      return mQ && mP && mS && mSt && mEp && mIsrc;
+      // Release-state filter — mutually exclusive states across all versions of the master
+      const mRel = (() => {
+        if (filterRelease === 'all') return true;
+        const today = new Date(); today.setHours(0,0,0,0);
+        const in30  = new Date(today); in30.setDate(in30.getDate() + 30);
+        const monthKey = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}`;
+        return (m.versions||[]).some(v => {
+          const dk = v.distrokid || {};
+          switch (filterRelease) {
+            case 'spotify':     return !!(dk.spotifyUrl?.trim());
+            case 'submitted':   return !!(dk.submittedDate?.trim());
+            case 'hyperfollow': return !!(dk.hyperFollowUrl?.trim());
+            case 'thisMonth': {
+              const d = (dk.releaseDate||'').slice(0,7);
+              return d === monthKey;
+            }
+            case 'next30': {
+              const r = (dk.releaseDate||'').trim();
+              if (!r) return false;
+              const rd = new Date(r + 'T00:00:00');
+              return rd >= today && rd <= in30;
+            }
+            default: return true;
+          }
+        });
+      })();
+      return mQ && mP && mS && mSt && mEp && mIsrc && mRel;
     });
-  }, [masters, eps, personas, searchQ, filterPersona, filterStatus, filterStage, filterEp, filterIsrc]);
+  }, [masters, eps, personas, searchQ, filterPersona, filterStatus, filterStage, filterEp, filterIsrc, filterRelease]);
 
   // ── RENDER ────────────────────────────────────────────────────────────────────
   return (
@@ -1324,6 +1352,16 @@ export default function App() {
               <option value="has">Has ISRC</option>
               <option value="missing">Missing ISRC (submitted/live)</option>
             </select>
+            <select value={filterRelease} onChange={e=>setFilterRelease(e.target.value)}
+              style={{ background:'#111', border:'1px solid #1e1e1e', borderRadius:4, color:'#ccc', padding:'8px 12px', fontSize:12, outline:'none', cursor:'pointer' }}
+              title="Filter by release state or timing">
+              <option value="all">All Releases</option>
+              <option value="spotify">🟢 Live on Spotify</option>
+              <option value="submitted">📬 Submitted to DistroKid</option>
+              <option value="hyperfollow">🔗 Has HyperFollow</option>
+              <option value="thisMonth">📅 Releasing this month</option>
+              <option value="next30">⏱ Releasing next 30 days</option>
+            </select>
             <div style={{ display:'flex', gap:4, marginLeft:'auto', flexWrap:'wrap' }}>
               {['Dashboard',...VIEWS].map(v=>(
                 <button key={v} onClick={()=>changeView(v)}
@@ -1485,8 +1523,13 @@ export default function App() {
               onCreateEp={createEp} onUpdateEp={updateEp} onDeleteEp={deleteEp} />
           )}
 
+          {/* Personas view — per-persona stats, release links, pending pitches */}
+          {view === 'Personas' && (
+            <PersonasView personas={personas} masters={masters} />
+          )}
+
           {/* Song list — grouped by view */}
-          {view !== 'Dashboard' && view !== 'Release Calendar' && view !== 'EPs' && (() => {
+          {view !== 'Dashboard' && view !== 'Release Calendar' && view !== 'EPs' && view !== 'Personas' && (() => {
             const sorted = [...filtered].sort((a,b)=>a.title.localeCompare(b.title));
             let groups = [];
             if (view==='Alphabetical') {
@@ -1597,13 +1640,30 @@ export default function App() {
           let relDate = null;
           let isPast = false;
           let isToday = false;
+          let daysOut = null;
           if (releaseDate) {
             relDate = new Date(releaseDate + 'T00:00:00');
             isPast = relDate < today;
             isToday = relDate.getTime() === today.getTime();
+            daysOut = Math.round((relDate - today) / (1000*60*60*24));
           }
           const statusColor = isLive ? '#34D399' : isSubmitted ? '#5B8DD9' : e.checklistDone ? '#C8942A' : '#666';
           const statusLabel = isLive ? '🟢 Live' : isSubmitted ? '📬 Submitted' : e.checklistDone ? '✓ Ready' : '○ Checklist incomplete';
+
+          // ISRC capture warning — submitted/live versions that don't have their
+          // single-release ISRC saved yet. Operational nag: capture from DistroKid.
+          const needsIsrc = (isSubmitted || isLive) && !primaryTakeIsrc(e.version);
+
+          // Pitch window — only meaningful for upcoming releases. Spotify
+          // Editorial accepts pitches up to ~28 days ahead; T-14 is the
+          // typical practical window; T-7 is the absolute floor.
+          let pitchWindow = null;
+          if (daysOut !== null && daysOut > 0 && !isLive) {
+            if (daysOut >= 14)     pitchWindow = { label:`🎯 T-${daysOut} · pitch window open`, color:'#34D399' };
+            else if (daysOut >= 7) pitchWindow = { label:`⏱ T-${daysOut} · pitch window closing`, color:'#C8942A' };
+            else                   pitchWindow = { label:`⚠ T-${daysOut} · pitch floor`,        color:'#C84A4A' };
+          }
+
           return (
             <div key={e.version.id} style={{ display:'flex', gap:12, padding:'12px 14px', background: isToday?'#1a1500':'#0d0d0d', border:`1px solid ${isToday?'#C8942A33':isLive?'#34D39922':'#1a1a1a'}`, borderLeft:`3px solid ${p.color}`, borderRadius:4, marginBottom:6 }}>
               {/* Date block */}
@@ -1619,18 +1679,24 @@ export default function App() {
               </div>
               {/* Main info */}
               <div style={{ flex:1, minWidth:0 }}>
-                <div style={{ fontSize:13, color: isPast&&!isLive?'#666':'#f0e8d8', marginBottom:3, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{e.master.title}</div>
+                <div style={{ fontSize:13, color: isPast&&!isLive?'#666':'#f0e8d8', marginBottom:3, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+                  {daysOut !== null && daysOut > 0 && <span style={{ color:'#C8942A', fontWeight:700, marginRight:8 }}>T-{daysOut}</span>}
+                  {e.master.title}
+                </div>
                 <div style={{ fontSize:11, color:p.color, letterSpacing:'0.08em', marginBottom:4 }}>{p.name} · {e.version.genre}</div>
                 <div style={{ display:'flex', alignItems:'center', gap:10, flexWrap:'wrap' }}>
                   <span style={{ fontSize:10, color:statusColor }}>{statusLabel}</span>
-                  {dk.hyperFollowUrl && <a href={dk.hyperFollowUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize:10, color:'#C8942A', textDecoration:'none' }}>🔗 HyperFollow</a>}
-                  {dk.spotifyUrl && <a href={dk.spotifyUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize:10, color:'#34D399', textDecoration:'none' }}>🎧 Spotify</a>}
+                  {needsIsrc && <span title="Single-release ISRC missing from DistroKid" style={{ fontSize:10, color:'#C8942A', padding:'1px 7px', borderRadius:3, background:'#1a1500', border:'1px solid #C8942A55' }}>⚠ ISRC needed</span>}
+                  {pitchWindow && <span style={{ fontSize:10, color:pitchWindow.color }}>{pitchWindow.label}</span>}
+                  {dk.hyperFollowUrl     && <a href={dk.hyperFollowUrl}     target="_blank" rel="noopener noreferrer" style={{ fontSize:10, color:'#C8942A', textDecoration:'none' }}>🔗 HyperFollow</a>}
+                  {dk.spotifyUrl         && <a href={dk.spotifyUrl}         target="_blank" rel="noopener noreferrer" style={{ fontSize:10, color:'#34D399', textDecoration:'none' }}>🎧 Spotify</a>}
+                  {dk.appleMusicTrackUrl && <a href={dk.appleMusicTrackUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize:10, color:'#F87171', textDecoration:'none' }}>🍎 Apple Music</a>}
                 </div>
               </div>
               {/* Days until */}
               {relDate && !isPast && !isToday && (
                 <div style={{ flexShrink:0, textAlign:'right' }}>
-                  <div style={{ fontSize:18, fontWeight:700, color:'#333' }}>{Math.round((relDate-today)/(1000*60*60*24))}</div>
+                  <div style={{ fontSize:18, fontWeight:700, color:'#333' }}>{daysOut}</div>
                   <div style={{ fontSize:9, color:'#444', letterSpacing:'0.08em' }}>days</div>
                 </div>
               )}

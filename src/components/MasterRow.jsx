@@ -270,10 +270,12 @@ function VersionBlock({ version, master, p, isVersionExpanded, onToggleVersion, 
 
   const [dkOpen, setDkOpen] = useState(false);
   const [dkForm, setDkForm] = useState({
-    submittedDate: (version.distrokid||{}).submittedDate||'',
-    releaseDate: (version.distrokid||{}).releaseDate||'',
-    hyperFollowUrl: (version.distrokid||{}).hyperFollowUrl||'',
-    spotifyUrl: (version.distrokid||{}).spotifyUrl||'',
+    submittedDate:      (version.distrokid||{}).submittedDate||'',
+    releaseDate:        (version.distrokid||{}).releaseDate||'',
+    hyperFollowUrl:     (version.distrokid||{}).hyperFollowUrl||'',
+    spotifyUrl:         (version.distrokid||{}).spotifyUrl||'',
+    appleMusicUrl:      (version.distrokid||{}).appleMusicUrl||'',
+    appleMusicTrackUrl: (version.distrokid||{}).appleMusicTrackUrl||'',
   });
 
   const sel = { background:'#0d0d0d', border:'1px solid #1e1e1e', borderRadius:4, color:'#aaa', padding:'8px 10px', fontSize:12, outline:'none', width:'100%' };
@@ -494,16 +496,18 @@ function VersionBlock({ version, master, p, isVersionExpanded, onToggleVersion, 
                             <span style={{ fontSize:11, color:'#444' }}>Complete checklist before submitting</span>
                           )}
                         </div>
-                        <button onClick={()=>{ setDkForm({ submittedDate:dk.submittedDate||'', releaseDate:dk.releaseDate||'', hyperFollowUrl:dk.hyperFollowUrl||'', spotifyUrl:dk.spotifyUrl||'' }); setDkOpen(o=>!o); }}
+                        <button onClick={()=>{ setDkForm({ submittedDate:dk.submittedDate||'', releaseDate:dk.releaseDate||'', hyperFollowUrl:dk.hyperFollowUrl||'', spotifyUrl:dk.spotifyUrl||'', appleMusicUrl:dk.appleMusicUrl||'', appleMusicTrackUrl:dk.appleMusicTrackUrl||'' }); setDkOpen(o=>!o); }}
                           style={{ background:'transparent', border:'1px solid #252525', borderRadius:3, color:'#888', padding:'3px 9px', fontSize:10, cursor:'pointer' }}>
                           {dkOpen ? 'Cancel' : isSubmitted ? '✎ Edit' : '+ Log Submission'}
                         </button>
                       </div>
                       {/* Quick-view links when not editing */}
-                      {!dkOpen && (dk.hyperFollowUrl||dk.spotifyUrl||primaryTakeIsrc(version)) && (
+                      {!dkOpen && (dk.hyperFollowUrl||dk.spotifyUrl||dk.appleMusicUrl||dk.appleMusicTrackUrl||primaryTakeIsrc(version)) && (
                         <div style={{ display:'flex', gap:12, marginTop:8, flexWrap:'wrap', alignItems:'center' }}>
-                          {dk.hyperFollowUrl && <a href={dk.hyperFollowUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize:10, color:'#C8942A' }}>🔗 HyperFollow</a>}
-                          {dk.spotifyUrl && <a href={dk.spotifyUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize:10, color:'#34D399' }}>🎧 Spotify</a>}
+                          {dk.hyperFollowUrl     && <a href={dk.hyperFollowUrl}     target="_blank" rel="noopener noreferrer" style={{ fontSize:10, color:'#C8942A' }}>🔗 HyperFollow</a>}
+                          {dk.spotifyUrl         && <a href={dk.spotifyUrl}         target="_blank" rel="noopener noreferrer" style={{ fontSize:10, color:'#34D399' }}>🎧 Spotify</a>}
+                          {dk.appleMusicTrackUrl && <a href={dk.appleMusicTrackUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize:10, color:'#F87171' }}>🍎 Apple Music (track)</a>}
+                          {dk.appleMusicUrl      && <a href={dk.appleMusicUrl}      target="_blank" rel="noopener noreferrer" style={{ fontSize:10, color:'#F87171' }}>🍎 Apple Music (artist)</a>}
                           {primaryTakeIsrc(version) && (
                             <span style={{ fontSize:10, color:'#34D399', fontFamily:'ui-monospace, Menlo, monospace' }}>🏷 ISRC {primaryTakeIsrc(version)}</span>
                           )}
@@ -522,6 +526,14 @@ function VersionBlock({ version, master, p, isVersionExpanded, onToggleVersion, 
                             <input value={dkForm.hyperFollowUrl} onChange={e=>setDkForm(f=>({...f,hyperFollowUrl:e.target.value}))} placeholder="https://distrokid.com/hyperfollow/…" style={fi2} /></div>
                           <div><label style={{ fontSize:9, letterSpacing:'0.12em', color:'#aaa', textTransform:'uppercase', display:'block', marginBottom:3 }}>Spotify URL (once live)</label>
                             <input value={dkForm.spotifyUrl} onChange={e=>setDkForm(f=>({...f,spotifyUrl:e.target.value}))} placeholder="https://open.spotify.com/track/…" style={fi2} /></div>
+                          <div><label style={{ fontSize:9, letterSpacing:'0.12em', color:'#aaa', textTransform:'uppercase', display:'block', marginBottom:3 }}>Apple Music — Track URL</label>
+                            <input value={dkForm.appleMusicTrackUrl} onChange={e=>setDkForm(f=>({...f,appleMusicTrackUrl:e.target.value}))} placeholder="https://music.apple.com/us/album/…?i=…" style={fi2} /></div>
+                          <div><label style={{ fontSize:9, letterSpacing:'0.12em', color:'#aaa', textTransform:'uppercase', display:'block', marginBottom:3 }}>Apple Music — Artist Page URL</label>
+                            <input value={dkForm.appleMusicUrl} onChange={e=>setDkForm(f=>({...f,appleMusicUrl:e.target.value}))} placeholder="https://music.apple.com/us/artist/…" style={fi2} />
+                            <div style={{ fontSize:9, color:'#666', marginTop:3, fontStyle:'italic' }}>
+                              Some Apple Music artist URLs use a name that doesn't match (e.g. crimson-gold vs Crimson &amp; Gold) — paste the exact one Apple uses for this artist.
+                            </div>
+                          </div>
                           <button onClick={saveDk} style={{ background:'linear-gradient(135deg,#5B8DD9,#3a6ab0)', border:'none', borderRadius:3, color:'#fff', padding:'7px 0', fontSize:11, letterSpacing:'0.1em', textTransform:'uppercase', cursor:'pointer' }}>
                             ✓ Save
                           </button>

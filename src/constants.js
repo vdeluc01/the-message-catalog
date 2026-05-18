@@ -57,7 +57,7 @@ export const THEMES = [
   'Grace','Healing','Purpose','Surrender','Family','Perseverance','Resurrection'
 ];
 
-export const VIEWS = ['By Persona','By Status','By Audience','By Theme','By Stage','Alphabetical','Release Calendar','EPs'];
+export const VIEWS = ['By Persona','By Status','By Audience','By Theme','By Stage','Alphabetical','Release Calendar','EPs','Personas'];
 
 export const EP_STATUSES = [
   { id:'upcoming',  label:'Upcoming',   color:'#5B8DD9' },
