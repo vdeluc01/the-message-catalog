@@ -8,6 +8,7 @@ export const DATA_KEY     = 'tmsg-catalog-v5';
 export const DATA_KEY_V4  = 'tmsg-catalog-v4';
 export const FID_KEY      = 'tmsg-gdrive-fid';
 export const TOMBSTONES_KEY = 'tmsg-deleted-master-ids';
+export const VAULT_STAMP_KEY = 'tmsg-vault-last-stamp';
 
 export const PERSONA_COLORS = ['#C8942A','#C84A4A','#5B8DD9','#8B5CF6','#D97706','#6B7280','#34D399','#60A5FA','#FCD34D','#F87171','#A855F7','#E67E22'];
 

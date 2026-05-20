@@ -4,9 +4,14 @@ import { uid, getP, iBase, lBase, effectiveStage, checklistStatus,
          versionNeedsIsrc, hasPendingPitches, getEpsForVersion } from './utils.js';
 import {
   PERSONAS_KEY, APIKEY_KEY, DATA_KEY, DATA_KEY_V4, FID_KEY, TOMBSTONES_KEY,
+  VAULT_STAMP_KEY,
   DEFAULT_PERSONAS, STAGES, RELEASE_STATUSES, VIEWS, PERSONA_COLORS, THEMES,
   EP_STATUSES, PITCH_PLATFORMS
 } from './constants.js';
+import {
+  buildVaultManifest, buildSingleEntryZip, sha256, bytesToHex,
+  postDigestToCalendar, buildOtsFile, downloadBytes, vaultFilenameStamp
+} from './copyrightVault.js';
 import { getToken, startOAuth, driveLoad, driveSave } from './drive.js';
 import { analyzeWithAI, enrichWithAI, analyzeThemesWithAI } from './ai.js';
 import {
@@ -81,6 +86,15 @@ export default function App() {
   const [editingPersona, setEditingPersona] = useState(null);
   const [newPersonaForm, setNewPersonaForm] = useState({ name:'', genre:'', desc:'', color:'#C8942A' });
   const [apiKey, setApiKey] = useState(() => localStorage.getItem(APIKEY_KEY) || '');
+
+  // Copyright Vault — single-click timestamped proof of authorship.
+  // `vaultStatus` walks through: idle → building → hashing → stamping → done|manual|error
+  const [vaultStatus, setVaultStatus] = useState('idle');
+  const [vaultMsg, setVaultMsg] = useState('');
+  const [vaultManual, setVaultManual] = useState(null); // { hashHex } when API fails
+  const [vaultLastStamp, setVaultLastStamp] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(VAULT_STAMP_KEY) || 'null'); } catch(_) { return null; }
+  });
 
   // Drive
   const [driveConnected, setDriveConnected] = useState(false);
@@ -544,6 +558,55 @@ export default function App() {
     reader.readAsText(file);
   }
 
+  // ── Copyright Vault ──
+  // Single-click flow: build manifest → zip → SHA-256 → attempt to POST hash
+  // to the OpenTimestamps calendar. On success, download zip + .ots. On
+  // failure (CORS / network), download zip and surface hash + manual link.
+  async function handleCopyrightVault() {
+    if (isDemo) { alert('Copyright Vault is disabled in demo mode.'); return; }
+    if (!masters.length) { alert('No songs to stamp yet.'); return; }
+    setVaultStatus('building'); setVaultMsg('Building manifest…'); setVaultManual(null);
+    try {
+      const manifest = buildVaultManifest(masters, personas);
+      const manifestBytes = new TextEncoder().encode(JSON.stringify(manifest, null, 2));
+      const zipBytes = buildSingleEntryZip('copyright-vault-manifest.json', manifestBytes);
+      const stamp = vaultFilenameStamp();
+      const zipName = `the-message-records-copyright-vault_${stamp}.zip`;
+
+      setVaultStatus('hashing'); setVaultMsg('Computing SHA-256…');
+      const digest = await sha256(zipBytes);
+      const hashHex = bytesToHex(digest);
+
+      // Always save the zip — that's the artifact the user keeps regardless of
+      // whether the calendar call succeeds. Without it the .ots is meaningless.
+      downloadBytes(zipBytes, zipName, 'application/zip');
+
+      setVaultStatus('stamping'); setVaultMsg('Stamping hash to Bitcoin via OpenTimestamps…');
+      try {
+        const calendarResp = await postDigestToCalendar(digest);
+        const ots = buildOtsFile(digest, calendarResp);
+        downloadBytes(ots, `${zipName}.ots`, 'application/vnd.opentimestamps');
+        const record = { stampedAt:new Date().toISOString(), songCount:manifest.songCount, hash:hashHex, mode:'auto' };
+        localStorage.setItem(VAULT_STAMP_KEY, JSON.stringify(record));
+        setVaultLastStamp(record);
+        setVaultStatus('done');
+        setVaultMsg(`✓ Stamped — saved zip and .ots proof for ${manifest.songCount} song${manifest.songCount!==1?'s':''}`);
+      } catch (err) {
+        // Calendar unreachable (very likely CORS in the browser). Hand the user
+        // the hash and a link so they can finish via the opentimestamps.org webform.
+        setVaultManual({ hashHex, zipName, songCount:manifest.songCount });
+        const record = { stampedAt:new Date().toISOString(), songCount:manifest.songCount, hash:hashHex, mode:'manual-pending' };
+        localStorage.setItem(VAULT_STAMP_KEY, JSON.stringify(record));
+        setVaultLastStamp(record);
+        setVaultStatus('manual');
+        setVaultMsg('Zip saved. Finish stamping manually — see below.');
+      }
+    } catch (e) {
+      setVaultStatus('error');
+      setVaultMsg('⚠ ' + (e?.message || 'Vault failed'));
+    }
+  }
+
   // ── Persona management ──
   const savePersonas = (updated) => {
     setPersonas(updated);
@@ -901,6 +964,16 @@ export default function App() {
 
               {settingsTab==='general' && (
                 <>
+                  {vaultLastStamp && (masters.length - (vaultLastStamp.songCount || 0)) >= 10 && (
+                    <div style={{ background:'#1a0f08', border:'1px solid #7a3a1a', borderRadius:4, padding:'10px 12px', marginBottom:18, fontSize:11, lineHeight:1.6 }}>
+                      <div style={{ color:'#F2A65A', fontWeight:600, marginBottom:4 }}>
+                        ⚠ Copyright Vault is out of date
+                      </div>
+                      <div style={{ color:'#bbb' }}>
+                        You've added {masters.length - (vaultLastStamp.songCount || 0)} new songs since your last blockchain stamp. Scroll down to <strong style={{ color:'#7CE6A8' }}>Copyright Vault</strong> to re-stamp.
+                      </div>
+                    </div>
+                  )}
                   <div style={{ marginBottom:20 }}>
                     <label style={lBase}>Anthropic API Key</label>
                     <input type="password" value={apiKey} onChange={e=>saveApiKey(e.target.value)} placeholder="sk-ant-…" style={iBase} />
@@ -1048,6 +1121,81 @@ export default function App() {
                         style={{ width:'100%', background:'#141414', border:'1px solid #A855F755', borderRadius:4, color:'#A855F7', padding:'10px 0', fontSize:12, cursor:'pointer' }}>
                         🏷 Normalize All Themes to Standard List
                       </button>
+                    )}
+                  </div>
+
+                  {/* COPYRIGHT VAULT */}
+                  <div style={{ borderTop:'1px solid #1a1a1a', paddingTop:16 }}>
+                    <label style={lBase}>Copyright Vault</label>
+                    <div style={{ fontSize:11, color:'#999', marginBottom:10, lineHeight:1.6 }}>
+                      Builds a manifest of every song (title, persona, Suno URLs) declaring you as the songwriter, zips it, and timestamps the hash to the Bitcoin blockchain via OpenTimestamps. One click does the whole legal-paper-trail step that used to be manual.
+                    </div>
+
+                    {vaultLastStamp && (() => {
+                      const grewBy = masters.length - (vaultLastStamp.songCount || 0);
+                      const stampedDate = (() => {
+                        try { return new Date(vaultLastStamp.stampedAt).toLocaleDateString(undefined, { year:'numeric', month:'short', day:'numeric' }); }
+                        catch(_) { return vaultLastStamp.stampedAt; }
+                      })();
+                      const needsRestamp = grewBy >= 10;
+                      return (
+                        <div style={{
+                          background: needsRestamp ? '#1a0f08' : '#0a140a',
+                          border: `1px solid ${needsRestamp ? '#7a3a1a' : '#1a3a1a'}`,
+                          borderRadius:4, padding:'10px 12px', marginBottom:10, fontSize:11, lineHeight:1.6
+                        }}>
+                          {needsRestamp ? (
+                            <>
+                              <div style={{ color:'#F2A65A', fontWeight:600, marginBottom:4 }}>⚠ {grewBy} new songs since your last stamp</div>
+                              <div style={{ color:'#aaa' }}>Last stamped <strong style={{ color:'#ddd' }}>{stampedDate}</strong> with {vaultLastStamp.songCount} song{vaultLastStamp.songCount!==1?'s':''}. Re-stamp to extend your proof of authorship to the newer songs.</div>
+                            </>
+                          ) : (
+                            <div style={{ color:'#7CB87C' }}>● Last stamped {stampedDate} — {vaultLastStamp.songCount} song{vaultLastStamp.songCount!==1?'s':''}{vaultLastStamp.mode==='manual-pending'?' (manual stamping not yet confirmed)':''}</div>
+                          )}
+                        </div>
+                      );
+                    })()}
+
+                    {vaultStatus==='idle' || vaultStatus==='done' || vaultStatus==='manual' || vaultStatus==='error' ? (
+                      <button onClick={handleCopyrightVault}
+                        style={{ width:'100%', background:'#0f3320', border:'1px solid #1f6a40', borderRadius:4, color:'#7CE6A8', padding:'10px 0', fontSize:12, cursor:'pointer', letterSpacing:'0.06em', fontWeight:600 }}>
+                        🛡 Stamp Catalog to Blockchain
+                      </button>
+                    ) : (
+                      <div style={{ background:'#0f1a12', border:'1px solid #1f6a40', borderRadius:4, padding:'10px 14px', fontSize:12, color:'#7CE6A8' }}>
+                        ⟳ {vaultMsg}
+                      </div>
+                    )}
+
+                    {vaultStatus==='done' && (
+                      <div style={{ fontSize:11, color:'#7CB87C', marginTop:8, lineHeight:1.6 }}>{vaultMsg}</div>
+                    )}
+                    {vaultStatus==='error' && (
+                      <div style={{ fontSize:11, color:'#F2A65A', marginTop:8, lineHeight:1.6 }}>{vaultMsg}</div>
+                    )}
+
+                    {vaultStatus==='manual' && vaultManual && (
+                      <div style={{ background:'#0f0f0f', border:'1px solid #2a2a2a', borderRadius:4, padding:'12px 14px', marginTop:10 }}>
+                        <div style={{ fontSize:11, color:'#F2A65A', marginBottom:8, lineHeight:1.6 }}>
+                          The OpenTimestamps server couldn't be reached from the browser (this is normal — their API blocks browser requests). Finish in two steps:
+                        </div>
+                        <ol style={{ fontSize:11, color:'#ccc', marginBottom:10, paddingLeft:18, lineHeight:1.7 }}>
+                          <li>The zip file <strong style={{ color:'#7CE6A8' }}>{vaultManual.zipName}</strong> just downloaded — keep it.</li>
+                          <li>Open <a href="https://opentimestamps.org" target="_blank" rel="noopener noreferrer" style={{ color:'#5B8DD9' }}>opentimestamps.org</a>, upload that zip, and save the <code style={{ color:'#C8942A' }}>.ots</code> file it gives you alongside the zip.</li>
+                        </ol>
+                        <div style={{ fontSize:10, color:'#888', marginBottom:4, letterSpacing:'0.1em', textTransform:'uppercase' }}>SHA-256 (for verification)</div>
+                        <input
+                          readOnly
+                          onClick={e => e.target.select()}
+                          value={vaultManual.hashHex}
+                          style={{ ...iBase, fontFamily:'monospace', fontSize:11, color:'#7CE6A8' }}
+                        />
+                        <button
+                          onClick={() => { navigator.clipboard.writeText(vaultManual.hashHex); flash('✓ Hash copied'); }}
+                          style={{ width:'100%', background:'#141414', border:'1px solid #2a2a2a', borderRadius:4, color:'#5B8DD9', padding:'8px 0', fontSize:11, cursor:'pointer', marginTop:6 }}>
+                          📋 Copy Hash
+                        </button>
+                      </div>
                     )}
                   </div>
                 </>
