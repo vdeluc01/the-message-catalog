@@ -221,9 +221,10 @@ export function downloadBytes(bytes, filename, mime) {
 
 // ---------- filename helpers ----------
 
-export function vaultFilenameStamp(d) {
+// Match Vito's existing copyright archive naming convention so all the
+// proofs sort together in his "Copyright Proof Keep Forever" folder.
+export function vaultBaseFilename(d) {
   const date = d || new Date();
   const pad = n => String(n).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())}`
-       + `_${pad(date.getHours())}${pad(date.getMinutes())}`;
+  return `Vito DeLuca Copyright Proof Archive_${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())}`;
 }

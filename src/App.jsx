@@ -10,7 +10,7 @@ import {
 } from './constants.js';
 import {
   buildVaultManifest, buildSingleEntryZip, sha256, bytesToHex,
-  postDigestToCalendar, buildOtsFile, downloadBytes, vaultFilenameStamp
+  postDigestToCalendar, buildOtsFile, downloadBytes, vaultBaseFilename
 } from './copyrightVault.js';
 import { getToken, startOAuth, driveLoad, driveSave } from './drive.js';
 import { analyzeWithAI, enrichWithAI, analyzeThemesWithAI } from './ai.js';
@@ -570,8 +570,8 @@ export default function App() {
       const manifest = buildVaultManifest(masters, personas);
       const manifestBytes = new TextEncoder().encode(JSON.stringify(manifest, null, 2));
       const zipBytes = buildSingleEntryZip('copyright-vault-manifest.json', manifestBytes);
-      const stamp = vaultFilenameStamp();
-      const zipName = `the-message-records-copyright-vault_${stamp}.zip`;
+      const baseName = vaultBaseFilename();
+      const zipName = `${baseName}.zip`;
 
       setVaultStatus('hashing'); setVaultMsg('Computing SHA-256…');
       const digest = await sha256(zipBytes);
@@ -1168,7 +1168,16 @@ export default function App() {
                     )}
 
                     {vaultStatus==='done' && (
-                      <div style={{ fontSize:11, color:'#7CB87C', marginTop:8, lineHeight:1.6 }}>{vaultMsg}</div>
+                      <>
+                        <div style={{ fontSize:11, color:'#7CB87C', marginTop:8, lineHeight:1.6 }}>{vaultMsg}</div>
+                        <div style={{ background:'#0a140a', border:'1px solid #1a3a1a', borderRadius:4, padding:'10px 12px', marginTop:10, fontSize:11, lineHeight:1.6, color:'#bbb' }}>
+                          <strong style={{ color:'#7CE6A8' }}>To verify the stamp:</strong> open the verify page below and drag the <code style={{ color:'#C8942A' }}>.ots</code> file you just saved onto it. It will show <strong style={{ color:'#F2A65A' }}>Pending</strong> for the first 1–3 hours while OpenTimestamps batches digests into a Bitcoin transaction. After that, it upgrades to a permanent block attestation.
+                        </div>
+                        <a href="https://opentimestamps.org" target="_blank" rel="noopener noreferrer"
+                           style={{ display:'block', textAlign:'center', background:'#141414', border:'1px solid #2a2a2a', borderRadius:4, color:'#5B8DD9', padding:'8px 0', fontSize:11, textDecoration:'none', marginTop:6 }}>
+                          🔎 Open opentimestamps.org to verify
+                        </a>
+                      </>
                     )}
                     {vaultStatus==='error' && (
                       <div style={{ fontSize:11, color:'#F2A65A', marginTop:8, lineHeight:1.6 }}>{vaultMsg}</div>
